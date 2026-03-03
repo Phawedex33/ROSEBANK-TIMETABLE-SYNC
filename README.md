@@ -19,7 +19,7 @@ Each line should follow:
 
 ### Modes
 - `Academic`: parses weekly class lines and syncs recurring events.
-- `Exam`: parses one-time assessment lines for preview (sync in next milestone).
+- `Exam`: parses one-time assessment lines and syncs one-time events.
 
 ### Backend Setup
 1. Install .NET 8 SDK.
@@ -42,11 +42,13 @@ Open:
 ### Endpoints
 - `POST /api/upload/preview` (`multipart/form-data`, fields: `file`, `mode`)
 - `POST /api/upload/preview-text` (`application/json`, body: `{ "mode": "Academic|Exam", "text": "..." }`)
-- `POST /api/upload/sync` (`application/json`)
+- `POST /api/upload/sync` (`application/json`, academic recurring events)
+- `POST /api/upload/sync-exam` (`application/json`, exam one-time events)
 
 ### Notes
 - PDF selectable text is implemented.
 - Image OCR now uses Tesseract (`tesseract <image> stdout -l eng --oem 1 --psm 6`).
 - Scanned PDFs without selectable text are detected and returned as actionable error (convert to image first, or add PDF-to-image OCR pipeline).
 - Text fallback is available via `preview-text` for messy PDFs.
+- Exam sync creates one-time events with popup reminders (24h and 2h).
 - OAuth token cache is stored in `backend/timetable-sync-token` after first auth.

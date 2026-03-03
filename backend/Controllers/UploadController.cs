@@ -77,4 +77,16 @@ public sealed class UploadController : ControllerBase
         var response = await _calendar.CreateWeeklyEventsAsync(request, cancellationToken);
         return Ok(response);
     }
+
+    [HttpPost("sync-exam")]
+    public async Task<IActionResult> SyncExam([FromBody] ExamSyncRequest request, CancellationToken cancellationToken)
+    {
+        if (request.Events.Count == 0)
+        {
+            return BadRequest("At least one exam event is required.");
+        }
+
+        var response = await _calendar.CreateExamEventsAsync(request, cancellationToken);
+        return Ok(response);
+    }
 }

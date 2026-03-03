@@ -1,6 +1,7 @@
 const apiBase = "/api/upload";
 
 let parsedAcademicEvents = [];
+let parsedExamEvents = [];
 
 const fileInput = document.getElementById("fileInput");
 const modeInput = document.getElementById("mode");
@@ -78,43 +79,72 @@ previewTextBtn.addEventListener("click", async () => {
 });
 
 syncBtn.addEventListener("click", async () => {
-  if (modeInput.value !== "Academic") {
-    statusOutput.textContent = "Exam sync will be added in the next milestone. Use Academic mode for now.";
+  if (modeInput.value === "Academic") {
+    if (parsedAcademicEvents.length === 0) {
+      statusOutput.textContent = "No parsed academic events to sync. Run preview first.";
+      return;
+    }
+
+    if (!semesterEndDateInput.value) {
+      statusOutput.textContent = "Select semester end date.";
+      return;
+    }
+
+    statusOutput.textContent = "Syncing weekly events to Google Calendar...";
+
+    try {
+      const res = await fetch(`${apiBase}/sync`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          events: parsedAcademicEvents,
+          semesterEndDate: semesterEndDateInput.value,
+          timeZone: timeZoneInput.value || "Africa/Johannesburg"
+        })
+      });
+
+      if (!res.ok) {
+        const error = await res.text();
+        throw new Error(error || "Sync failed.");
+      }
+
+      const data = await res.json();
+      statusOutput.textContent = `Success: ${data.created} recurring event(s) created.`;
+    } catch (err) {
+      statusOutput.textContent = err.message;
+    }
     return;
   }
 
-  if (parsedAcademicEvents.length === 0) {
-    statusOutput.textContent = "No parsed academic events to sync. Run preview first.";
+  if (parsedExamEvents.length === 0) {
+    statusOutput.textContent = "No parsed exam events to sync. Run preview first.";
     return;
   }
 
-  if (!semesterEndDateInput.value) {
-    statusOutput.textContent = "Select semester end date.";
-    return;
-  }
-
-  statusOutput.textContent = "Syncing weekly events to Google Calendar...";
+  statusOutput.textContent = "Syncing exam events to Google Calendar...";
 
   try {
-    const res = await fetch(`${apiBase}/sync`, {
+    const res = await fetch(`${apiBase}/sync-exam`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        events: parsedAcademicEvents,
-        semesterEndDate: semesterEndDateInput.value,
-        timeZone: timeZoneInput.value || "Africa/Johannesburg"
+        events: parsedExamEvents,
+        timeZone: timeZoneInput.value || "Africa/Johannesburg",
+        durationMinutes: 60
       })
     });
 
     if (!res.ok) {
       const error = await res.text();
-      throw new Error(error || "Sync failed.");
+      throw new Error(error || "Exam sync failed.");
     }
 
     const data = await res.json();
-    statusOutput.textContent = `Success: ${data.created} recurring event(s) created.`;
+    statusOutput.textContent = `Success: ${data.created} exam event(s) created.`;
   } catch (err) {
     statusOutput.textContent = err.message;
   }
@@ -122,19 +152,19 @@ syncBtn.addEventListener("click", async () => {
 
 function applyPreviewResult(data) {
   parsedAcademicEvents = data.academicEvents || [];
-  const examEvents = data.examEvents || [];
+  parsedExamEvents = data.examEvents || [];
 
   textOutput.textContent = data.extractedText || "No text extracted.";
   eventsOutput.textContent = JSON.stringify(
     {
       mode: data.mode,
       academicEvents: data.academicEvents,
-      examEvents: data.examEvents,
+      examEvents: parsedExamEvents,
       warnings: data.warnings
     },
     null,
     2
   );
 
-  statusOutput.textContent = `Preview complete: ${parsedAcademicEvents.length} academic, ${examEvents.length} exam event(s).`;
+  statusOutput.textContent = `Preview complete: ${parsedAcademicEvents.length} academic, ${parsedExamEvents.length} exam event(s).`;
 }

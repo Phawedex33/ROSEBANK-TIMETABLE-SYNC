@@ -19,22 +19,7 @@ public sealed class GoogleCalendarService : IGoogleCalendarService
 
     public async Task<SyncResponse> CreateWeeklyEventsAsync(SyncRequest request, CancellationToken cancellationToken)
     {
-        var credential = await GoogleWebAuthorizationBroker.AuthorizeAsync(
-            new ClientSecrets
-            {
-                ClientId = _options.ClientId,
-                ClientSecret = _options.ClientSecret
-            },
-            new[] { CalendarService.Scope.Calendar },
-            "user",
-            cancellationToken,
-            new FileDataStore("timetable-sync-token", true));
-
-        var service = new CalendarService(new BaseClientService.Initializer
-        {
-            HttpClientInitializer = credential,
-            ApplicationName = _options.ApplicationName
-        });
+        var service = await CreateCalendarClientAsync(cancellationToken);
 
         var response = new SyncResponse();
         var nowDate = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -89,6 +74,99 @@ public sealed class GoogleCalendarService : IGoogleCalendarService
 
         response.Created = response.EventIds.Count;
         return response;
+    }
+
+    public async Task<SyncResponse> CreateExamEventsAsync(ExamSyncRequest request, CancellationToken cancellationToken)
+    {
+        var service = await CreateCalendarClientAsync(cancellationToken);
+        var response = new SyncResponse();
+        var duration = request.DurationMinutes <= 0 ? 60 : request.DurationMinutes;
+
+        foreach (var item in request.Events)
+        {
+            var start = item.Date.ToDateTime(item.Time, DateTimeKind.Unspecified);
+            var end = start.AddMinutes(duration);
+            var summary = $"[EXAM] {item.ModuleCode} - {item.AssessmentType}";
+            if (!string.IsNullOrWhiteSpace(item.ModuleName))
+            {
+                summary = $"[EXAM] {item.ModuleCode} - {item.ModuleName} ({item.AssessmentType})";
+            }
+
+            var examEvent = new Event
+            {
+                Summary = summary,
+                Description = BuildExamDescription(item),
+                Start = new EventDateTime
+                {
+                    DateTime = start,
+                    TimeZone = request.TimeZone
+                },
+                End = new EventDateTime
+                {
+                    DateTime = end,
+                    TimeZone = request.TimeZone
+                },
+                Reminders = new Event.RemindersData
+                {
+                    UseDefault = false,
+                    Overrides = new List<EventReminder>
+                    {
+                        new() { Method = "popup", Minutes = 1440 },
+                        new() { Method = "popup", Minutes = 120 }
+                    }
+                }
+            };
+
+            var created = await service.Events.Insert(examEvent, _options.CalendarId).ExecuteAsync(cancellationToken);
+            if (!string.IsNullOrWhiteSpace(created.Id))
+            {
+                response.EventIds.Add(created.Id);
+            }
+        }
+
+        response.Created = response.EventIds.Count;
+        return response;
+    }
+
+    private async Task<CalendarService> CreateCalendarClientAsync(CancellationToken cancellationToken)
+    {
+        var credential = await GoogleWebAuthorizationBroker.AuthorizeAsync(
+            new ClientSecrets
+            {
+                ClientId = _options.ClientId,
+                ClientSecret = _options.ClientSecret
+            },
+            new[] { CalendarService.Scope.Calendar },
+            "user",
+            cancellationToken,
+            new FileDataStore("timetable-sync-token", true));
+
+        return new CalendarService(new BaseClientService.Initializer
+        {
+            HttpClientInitializer = credential,
+            ApplicationName = _options.ApplicationName
+        });
+    }
+
+    private static string BuildExamDescription(ExamEvent item)
+    {
+        var details = new List<string>
+        {
+            $"Module: {item.ModuleCode}",
+            $"Assessment: {item.AssessmentType}"
+        };
+
+        if (!string.IsNullOrWhiteSpace(item.ModuleName))
+        {
+            details.Add($"Name: {item.ModuleName}");
+        }
+
+        if (item.Sitting.HasValue)
+        {
+            details.Add($"Sitting: {item.Sitting.Value}");
+        }
+
+        return string.Join(Environment.NewLine, details);
     }
 
     private static DateOnly GetNextDateForDay(DayOfWeek target, DateOnly from)
