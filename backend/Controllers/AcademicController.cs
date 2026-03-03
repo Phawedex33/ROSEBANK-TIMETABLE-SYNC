@@ -51,6 +51,7 @@ public sealed class AcademicController : ControllerBase
         {
             Events = request.Events,
             SemesterEndDate = request.SemesterEndDate,
+            WeeksDuration = request.WeeksDuration,
             TimeZone = request.TimeZone
         }, cancellationToken);
 

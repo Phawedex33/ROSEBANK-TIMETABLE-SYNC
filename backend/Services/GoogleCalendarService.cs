@@ -23,6 +23,8 @@ public sealed class GoogleCalendarService : IGoogleCalendarService
 
         var response = new SyncResponse();
         var nowDate = DateOnly.FromDateTime(DateTime.UtcNow);
+        var weeks = request.WeeksDuration <= 0 ? 16 : request.WeeksDuration;
+        var recurrenceEndDate = request.SemesterEndDate ?? nowDate.AddDays(weeks * 7);
 
         foreach (var item in request.Events)
         {
@@ -63,7 +65,7 @@ public sealed class GoogleCalendarService : IGoogleCalendarService
                 },
                 Recurrence = new List<string>
                 {
-                    $"RRULE:FREQ=WEEKLY;UNTIL={request.SemesterEndDate.ToDateTime(TimeOnly.MaxValue):yyyyMMdd'T'HHmmss'Z'}"
+                    $"RRULE:FREQ=WEEKLY;UNTIL={recurrenceEndDate.ToDateTime(TimeOnly.MaxValue):yyyyMMdd'T'HHmmss'Z'}"
                 },
                 ColorId = "9"
             };

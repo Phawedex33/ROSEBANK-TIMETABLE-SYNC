@@ -1,12 +1,14 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>9c79c667-c5b2-4688-9c5f-aa82550dbd9f</UserSecretsId>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Google.Apis.Calendar.v3" Version="1.68.0.3400" />
+    <PackageReference Include="Google.Apis.Calendar.v3" Version="1.68.0.3402" />
     <PackageReference Include="Google.Apis.Auth" Version="1.68.0" />
-    <PackageReference Include="UglyToad.PdfPig" Version="0.1.9" />
+    <PackageReference Include="UglyToad.PdfPig" Version="0.1.9-alpha001-patch1" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
   </ItemGroup>
 </Project>

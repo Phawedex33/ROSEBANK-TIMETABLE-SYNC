@@ -20,6 +20,7 @@ Each line should follow:
 ### Modes
 - `Academic`: Rosebank class timetable flow (year + group + recurring weekly sync).
 - `Assessment`: Rosebank PAS flow (one-time assessment events with reminders).
+- User can upload PDF/image for either timetable type, choose groups `GR1..GR20`, and select modules before syncing.
 
 ### Backend Setup
 1. Install .NET 8 SDK.
@@ -41,7 +42,7 @@ Open:
 
 ### Endpoints
 - `POST /api/academic/preview` (`multipart/form-data`, fields: `file`, `year`, `group`)
-- `POST /api/academic/sync` (`application/json`, body includes `year`, `group`, `events`, `semesterEndDate`, `timeZone`)
+- `POST /api/academic/sync` (`application/json`, body includes `year`, `group`, `events`, `timeZone`, optional `semesterEndDate` or `weeksDuration`)
 - `POST /api/assessment/preview` (`multipart/form-data`, provide `file` or `text`)
 - `POST /api/assessment/sync` (`application/json`, one-time assessment events)
 
@@ -63,4 +64,5 @@ Open:
   - Academic: supports day/period grid-style lines (`Mo 3 ADDB6311 ...`, `ADDB6311 ... We 2`, optional `GR1/GR2/GR3`).
   - Assessment PAS: supports both single-line rows and fragmented multi-line module blocks, with fallback time defaults.
 - UI includes a parser diagnostics panel showing which parser branch matched each generated row.
+- Academic sync no longer requires semester end date from UI; default recurrence is 16 weeks unless `semesterEndDate` or `weeksDuration` is provided.
 - OAuth token cache is stored in `backend/timetable-sync-token` after first auth.

@@ -9,16 +9,16 @@
 <body>
   <main class="container">
     <h1>Rosebank Timetable -> Google Calendar Sync</h1>
-    <p class="sub">Preview and edit events before syncing to Google Calendar.</p>
+    <p class="sub">Upload class or exam timetable, pick your group and modules, then sync in one flow.</p>
 
     <section class="card">
-      <label for="mode">Sync Mode</label>
+      <label for="mode">Timetable Type</label>
       <select id="mode">
-        <option value="academic">Academic Timetable</option>
-        <option value="assessment">Assessment (PAS)</option>
+        <option value="academic">Class Timetable</option>
+        <option value="assessment">Exam / Assessment Timetable</option>
       </select>
 
-      <label for="fileInput">Upload PDF / Image</label>
+      <label for="fileInput">Upload Timetable (PDF / Image)</label>
       <input id="fileInput" type="file" accept=".pdf,.png,.jpg,.jpeg" />
 
       <div id="assessmentTextWrap" class="hidden">
@@ -30,7 +30,7 @@
     </section>
 
     <section class="card" id="academicFields">
-      <h2>Academic Settings</h2>
+      <h2>Class Settings</h2>
       <label for="yearInput">Year</label>
       <select id="yearInput">
         <option value="1">1</option>
@@ -43,16 +43,39 @@
         <option value="GR1">GR1</option>
         <option value="GR2">GR2</option>
         <option value="GR3">GR3</option>
+        <option value="GR4">GR4</option>
+        <option value="GR5">GR5</option>
+        <option value="GR6">GR6</option>
+        <option value="GR7">GR7</option>
+        <option value="GR8">GR8</option>
+        <option value="GR9">GR9</option>
+        <option value="GR10">GR10</option>
+        <option value="GR11">GR11</option>
+        <option value="GR12">GR12</option>
+        <option value="GR13">GR13</option>
+        <option value="GR14">GR14</option>
+        <option value="GR15">GR15</option>
+        <option value="GR16">GR16</option>
+        <option value="GR17">GR17</option>
+        <option value="GR18">GR18</option>
+        <option value="GR19">GR19</option>
+        <option value="GR20">GR20</option>
       </select>
-
-      <label for="semesterEndDate">Semester End Date</label>
-      <input id="semesterEndDate" type="date" />
+      <p class="hint">Recurring class events run for 16 weeks by default.</p>
     </section>
 
     <section class="card hidden" id="assessmentFields">
-      <h2>Assessment Settings</h2>
+      <h2>Exam / Assessment Settings</h2>
       <label for="durationInput">Event Duration (minutes)</label>
       <input id="durationInput" type="number" min="15" step="15" value="60" />
+    </section>
+
+    <section class="card" id="modulePickerCard">
+      <div class="row">
+        <h2>Choose Modules to Sync</h2>
+        <button id="selectAllModulesBtn" type="button">Select All</button>
+      </div>
+      <div id="modulesWrap" class="chips"></div>
     </section>
 
     <section class="card">

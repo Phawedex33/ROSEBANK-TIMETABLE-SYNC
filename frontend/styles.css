@@ -40,6 +40,12 @@ h2 {
   color: var(--muted);
 }
 
+.hint {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .card {
   background: var(--card);
   border: 1px solid var(--border);
@@ -106,6 +112,27 @@ pre {
   width: auto;
   margin: 0;
   padding: 0.5rem 0.8rem;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.chip {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.35rem 0.65rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: #f8fafc;
+}
+
+.chip input {
+  width: auto;
+  margin: 0;
 }
 
 .table-wrap {

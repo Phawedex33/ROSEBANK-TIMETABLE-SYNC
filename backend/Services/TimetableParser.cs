@@ -11,11 +11,11 @@ public sealed class TimetableParser : ITimetableParser
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private static readonly Regex AcademicGridPattern = new(
-        "^(?:(?<group>GR[123])\\s+)?(?<day>Mo|Tu|We|Th|Fr|Sa|Su|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\\s+(?:P(?:eriod)?\\s*)?(?<period>[1-9])\\s+(?<subject>[A-Z]{4}\\d{4}.*)$",
+        "^(?:(?<group>GR(?:[1-9]|1\\d|20))\\s+)?(?<day>Mo|Tu|We|Th|Fr|Sa|Su|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\\s+(?:P(?:eriod)?\\s*)?(?<period>[1-9])\\s+(?<subject>[A-Z]{4}\\d{4}.*)$",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private static readonly Regex AcademicGridTailPattern = new(
-        "^(?<subject>[A-Z]{4}\\d{4}.*?)\\s+(?:(?<group>GR[123])\\s+)?(?<day>Mo|Tu|We|Th|Fr|Sa|Su|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\\s+(?:P(?:eriod)?\\s*)?(?<period>[1-9])$",
+        "^(?<subject>[A-Z]{4}\\d{4}.*?)\\s+(?:(?<group>GR(?:[1-9]|1\\d|20))\\s+)?(?<day>Mo|Tu|We|Th|Fr|Sa|Su|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\\s+(?:P(?:eriod)?\\s*)?(?<period>[1-9])$",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private static readonly Regex ExamLinePattern = new(
@@ -239,7 +239,9 @@ public sealed class TimetableParser : ITimetableParser
                 continue;
             }
 
-            var sitting = sittingMatch.Success ? int.Parse(sittingMatch.Groups["sitting"].Value, CultureInfo.InvariantCulture) : null;
+            int? sitting = sittingMatch.Success
+                ? int.Parse(sittingMatch.Groups["sitting"].Value, CultureInfo.InvariantCulture)
+                : null;
             var moduleCode = examMatch.Groups["code"].Value.Trim().ToUpperInvariant();
             var moduleName = examMatch.Groups["name"].Value.Trim();
             var assessmentType = examMatch.Groups["type"].Value.Trim();

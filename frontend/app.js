@@ -5,6 +5,8 @@ const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"
 
 let academicRows = [];
 let assessmentRows = [];
+let availableModules = [];
+let selectedModules = new Set();
 
 const modeInput = document.getElementById("mode");
 const fileInput = document.getElementById("fileInput");
@@ -12,7 +14,6 @@ const assessmentTextInput = document.getElementById("assessmentText");
 const assessmentTextWrap = document.getElementById("assessmentTextWrap");
 const yearInput = document.getElementById("yearInput");
 const groupInput = document.getElementById("groupInput");
-const semesterEndDateInput = document.getElementById("semesterEndDate");
 const durationInput = document.getElementById("durationInput");
 const timeZoneInput = document.getElementById("timeZone");
 const academicFields = document.getElementById("academicFields");
@@ -25,6 +26,8 @@ const previewBtn = document.getElementById("previewBtn");
 const syncBtn = document.getElementById("syncBtn");
 const addAcademicRowBtn = document.getElementById("addAcademicRowBtn");
 const addAssessmentRowBtn = document.getElementById("addAssessmentRowBtn");
+const selectAllModulesBtn = document.getElementById("selectAllModulesBtn");
+const modulesWrap = document.getElementById("modulesWrap");
 const textOutput = document.getElementById("textOutput");
 const diagnosticsOutput = document.getElementById("diagnosticsOutput");
 const statusOutput = document.getElementById("statusOutput");
@@ -32,8 +35,13 @@ const statusOutput = document.getElementById("statusOutput");
 modeInput.addEventListener("change", applyMode);
 previewBtn.addEventListener("click", onPreview);
 syncBtn.addEventListener("click", onSync);
+selectAllModulesBtn.addEventListener("click", () => {
+  selectedModules = new Set(availableModules);
+  renderModules();
+});
 addAcademicRowBtn.addEventListener("click", () => {
   academicRows.push({ day: "Monday", startTime: "08:00", endTime: "08:50", subject: "" });
+  refreshModulePicker();
   renderAcademicTable();
 });
 addAssessmentRowBtn.addEventListener("click", () => {
@@ -46,12 +54,14 @@ addAssessmentRowBtn.addEventListener("click", () => {
     deliveryMode: "Unspecified",
     sitting: null
   });
+  refreshModulePicker();
   renderAssessmentTable();
 });
 
 applyMode();
 renderAcademicTable();
 renderAssessmentTable();
+refreshModulePicker();
 
 function applyMode() {
   const isAcademic = modeInput.value === "academic";
@@ -62,6 +72,8 @@ function applyMode() {
   assessmentFields.classList.toggle("hidden", isAcademic);
   assessmentTableWrap.classList.toggle("hidden", isAcademic);
   assessmentTextWrap.classList.toggle("hidden", isAcademic);
+
+  refreshModulePicker();
 }
 
 async function onPreview() {
@@ -82,7 +94,7 @@ async function onPreview() {
 async function previewAcademic() {
   const file = fileInput.files[0];
   if (!file) {
-    throw new Error("Choose an academic timetable file first.");
+    throw new Error("Choose a class timetable file first.");
   }
 
   const form = new FormData();
@@ -96,7 +108,7 @@ async function previewAcademic() {
   });
 
   if (!res.ok) {
-    throw new Error(await getErrorText(res, "Academic preview failed."));
+    throw new Error(await getErrorText(res, "Class timetable preview failed."));
   }
 
   const data = await res.json();
@@ -109,10 +121,11 @@ async function previewAcademic() {
 
   textOutput.textContent = data.extractedText || "No extracted text.";
   updateDiagnostics(data.diagnostics || [], data.warnings || []);
+  refreshModulePicker();
   renderAcademicTable();
 
   const warningCount = (data.warnings || []).length;
-  statusOutput.textContent = `Academic preview complete: ${academicRows.length} row(s), ${warningCount} warning(s).`;
+  statusOutput.textContent = `Class preview complete: ${academicRows.length} row(s), ${warningCount} warning(s).`;
 }
 
 async function previewAssessment() {
@@ -153,6 +166,7 @@ async function previewAssessment() {
 
   textOutput.textContent = data.extractedText || "No extracted text.";
   updateDiagnostics(data.diagnostics || [], data.warnings || []);
+  refreshModulePicker();
   renderAssessmentTable();
 
   const warningCount = (data.warnings || []).length;
@@ -174,21 +188,22 @@ async function onSync() {
 
 async function syncAcademic() {
   if (academicRows.length === 0) {
-    throw new Error("No academic rows to sync.");
+    throw new Error("No class rows to sync.");
   }
 
-  if (!semesterEndDateInput.value) {
-    throw new Error("Select semester end date.");
+  const filtered = academicRows.filter((row) => selectedModules.has(getAcademicModuleKey(row.subject)));
+  if (filtered.length === 0) {
+    throw new Error("Select at least one module to sync.");
   }
 
-  statusOutput.textContent = "Syncing academic events...";
+  statusOutput.textContent = "Syncing class events...";
 
   const payload = {
     year: Number(yearInput.value),
     group: groupInput.value,
-    semesterEndDate: semesterEndDateInput.value,
+    weeksDuration: 16,
     timeZone: timeZoneInput.value || "Africa/Johannesburg",
-    events: academicRows.map((row) => ({
+    events: filtered.map((row) => ({
       day: row.day,
       startTime: toApiTime(row.startTime),
       endTime: toApiTime(row.endTime),
@@ -205,16 +220,21 @@ async function syncAcademic() {
   });
 
   if (!res.ok) {
-    throw new Error(await getErrorText(res, "Academic sync failed."));
+    throw new Error(await getErrorText(res, "Class sync failed."));
   }
 
   const data = await res.json();
-  statusOutput.textContent = `Academic sync complete: ${data.created} recurring event(s) created.`;
+  statusOutput.textContent = `Class sync complete: ${data.created} recurring event(s) created.`;
 }
 
 async function syncAssessment() {
   if (assessmentRows.length === 0) {
     throw new Error("No assessment rows to sync.");
+  }
+
+  const filtered = assessmentRows.filter((row) => selectedModules.has(getAssessmentModuleKey(row)));
+  if (filtered.length === 0) {
+    throw new Error("Select at least one module to sync.");
   }
 
   statusOutput.textContent = "Syncing assessment events...";
@@ -223,7 +243,7 @@ async function syncAssessment() {
   const payload = {
     timeZone: timeZoneInput.value || "Africa/Johannesburg",
     durationMinutes: duration,
-    events: assessmentRows.map((row) => ({
+    events: filtered.map((row) => ({
       moduleCode: row.moduleCode,
       moduleName: row.moduleName,
       assessmentType: row.assessmentType,
@@ -317,9 +337,11 @@ function bindTableInputs(container, rows) {
       const index = Number(btn.getAttribute("data-index"));
       if (mode === "academic") {
         academicRows.splice(index, 1);
+        refreshModulePicker();
         renderAcademicTable();
       } else {
         assessmentRows.splice(index, 1);
+        refreshModulePicker();
         renderAssessmentTable();
       }
     });
@@ -329,7 +351,66 @@ function bindTableInputs(container, rows) {
     const index = Number(event.target.getAttribute("data-index"));
     const field = event.target.getAttribute("data-field");
     rows[index][field] = event.target.value;
+    refreshModulePicker();
   }
+}
+
+function refreshModulePicker() {
+  if (modeInput.value === "academic") {
+    availableModules = [...new Set(academicRows.map((row) => getAcademicModuleKey(row.subject)).filter(Boolean))].sort();
+  } else {
+    availableModules = [...new Set(assessmentRows.map(getAssessmentModuleKey).filter(Boolean))].sort();
+  }
+
+  selectedModules = new Set(availableModules.filter((m) => selectedModules.has(m) || selectedModules.size === 0));
+  if (selectedModules.size === 0) {
+    selectedModules = new Set(availableModules);
+  }
+
+  renderModules();
+}
+
+function renderModules() {
+  modulesWrap.innerHTML = "";
+
+  if (availableModules.length === 0) {
+    const empty = document.createElement("span");
+    empty.textContent = "No modules detected yet. Preview a timetable first.";
+    modulesWrap.appendChild(empty);
+    return;
+  }
+
+  for (const module of availableModules) {
+    const label = document.createElement("label");
+    label.className = "chip";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = selectedModules.has(module);
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) {
+        selectedModules.add(module);
+      } else {
+        selectedModules.delete(module);
+      }
+    });
+
+    const text = document.createElement("span");
+    text.textContent = module;
+
+    label.appendChild(checkbox);
+    label.appendChild(text);
+    modulesWrap.appendChild(label);
+  }
+}
+
+function getAcademicModuleKey(subject) {
+  const m = String(subject || "").match(/[A-Z]{4}\d{4}/);
+  return m ? m[0] : String(subject || "").trim();
+}
+
+function getAssessmentModuleKey(row) {
+  return String(row.moduleCode || row.moduleName || "").trim();
 }
 
 function normalizeTime(value) {
