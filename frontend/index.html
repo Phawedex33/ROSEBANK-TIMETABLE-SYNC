@@ -3,59 +3,112 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Timetable Sync</title>
+  <title>Rosebank Timetable Sync</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <main class="container">
-    <h1>Smart Timetable to Google Calendar Sync</h1>
-    <p class="sub">Upload timetable PDF/image, preview parsed classes, then sync recurring weekly events.</p>
+    <h1>Rosebank Timetable -> Google Calendar Sync</h1>
+    <p class="sub">Preview and edit events before syncing to Google Calendar.</p>
 
     <section class="card">
-      <label for="mode">Mode</label>
+      <label for="mode">Sync Mode</label>
       <select id="mode">
-        <option value="Academic">Academic (weekly classes)</option>
-        <option value="Exam">Exam (one-time assessments)</option>
+        <option value="academic">Academic Timetable</option>
+        <option value="assessment">Assessment (PAS)</option>
       </select>
 
-      <label for="fileInput">Timetable file (PDF/JPG/PNG)</label>
+      <label for="fileInput">Upload PDF / Image</label>
       <input id="fileInput" type="file" accept=".pdf,.png,.jpg,.jpeg" />
-      <button id="previewBtn">Preview From File</button>
+
+      <div id="assessmentTextWrap" class="hidden">
+        <label for="assessmentText">Optional: paste PAS text (fallback)</label>
+        <textarea id="assessmentText" rows="5" placeholder="Paste extracted assessment text here..."></textarea>
+      </div>
+
+      <button id="previewBtn">Preview</button>
     </section>
 
-    <section class="card">
-      <label for="textInput">Fallback: paste extracted text</label>
-      <textarea id="textInput" rows="8" placeholder="Paste timetable text here when PDF extraction is messy..."></textarea>
-      <button id="previewTextBtn">Preview From Pasted Text</button>
-    </section>
+    <section class="card" id="academicFields">
+      <h2>Academic Settings</h2>
+      <label for="yearInput">Year</label>
+      <select id="yearInput">
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3" selected>3</option>
+      </select>
 
-    <section class="card">
-      <label for="groupInput">Academic Group (assisted mode)</label>
-      <input id="groupInput" type="text" placeholder="Example: GR1" />
+      <label for="groupInput">Group</label>
+      <select id="groupInput">
+        <option value="GR1">GR1</option>
+        <option value="GR2">GR2</option>
+        <option value="GR3">GR3</option>
+      </select>
 
-      <label for="academicDraftInput">Academic Draft Rows (JSON array)</label>
-      <textarea id="academicDraftInput" rows="8" placeholder='[{"day":"Monday","period":1,"subject":"ADDB6311","lecturer":"Dr X","venue":"LAB 2"}]'></textarea>
-      <button id="buildAcademicBtn">Build Academic Events From Draft</button>
-    </section>
-
-    <section class="card">
-      <label for="semesterEndDate">Semester End Date (Academic sync)</label>
+      <label for="semesterEndDate">Semester End Date</label>
       <input id="semesterEndDate" type="date" />
+    </section>
 
+    <section class="card hidden" id="assessmentFields">
+      <h2>Assessment Settings</h2>
+      <label for="durationInput">Event Duration (minutes)</label>
+      <input id="durationInput" type="number" min="15" step="15" value="60" />
+    </section>
+
+    <section class="card">
       <label for="timeZone">Time Zone</label>
       <input id="timeZone" type="text" value="Africa/Johannesburg" />
+      <button id="syncBtn">Sync Edited Events</button>
+    </section>
 
-      <button id="syncBtn">Sync to Google Calendar</button>
+    <section class="card" id="academicTableWrap">
+      <div class="row">
+        <h2>Academic Preview (Editable)</h2>
+        <button id="addAcademicRowBtn" type="button">Add Row</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Day</th>
+              <th>Start</th>
+              <th>End</th>
+              <th>Subject</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="academicBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card hidden" id="assessmentTableWrap">
+      <div class="row">
+        <h2>Assessment Preview (Editable)</h2>
+        <button id="addAssessmentRowBtn" type="button">Add Row</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Module</th>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Sitting</th>
+              <th>Date</th>
+              <th>Time</th>
+              <th>Mode</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="assessmentBody"></tbody>
+        </table>
+      </div>
     </section>
 
     <section class="card">
       <h2>Extracted Text</h2>
       <pre id="textOutput">No data yet.</pre>
-    </section>
-
-    <section class="card">
-      <h2>Parsed Events</h2>
-      <pre id="eventsOutput">No events yet.</pre>
     </section>
 
     <section class="card">
