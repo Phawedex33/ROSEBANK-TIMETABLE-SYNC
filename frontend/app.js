@@ -26,6 +26,7 @@ const syncBtn = document.getElementById("syncBtn");
 const addAcademicRowBtn = document.getElementById("addAcademicRowBtn");
 const addAssessmentRowBtn = document.getElementById("addAssessmentRowBtn");
 const textOutput = document.getElementById("textOutput");
+const diagnosticsOutput = document.getElementById("diagnosticsOutput");
 const statusOutput = document.getElementById("statusOutput");
 
 modeInput.addEventListener("change", applyMode);
@@ -107,6 +108,7 @@ async function previewAcademic() {
   }));
 
   textOutput.textContent = data.extractedText || "No extracted text.";
+  updateDiagnostics(data.diagnostics || [], data.warnings || []);
   renderAcademicTable();
 
   const warningCount = (data.warnings || []).length;
@@ -150,6 +152,7 @@ async function previewAssessment() {
   }));
 
   textOutput.textContent = data.extractedText || "No extracted text.";
+  updateDiagnostics(data.diagnostics || [], data.warnings || []);
   renderAssessmentTable();
 
   const warningCount = (data.warnings || []).length;
@@ -360,4 +363,26 @@ function escapeAttr(value) {
 async function getErrorText(res, fallback) {
   const text = await res.text();
   return text || fallback;
+}
+
+function updateDiagnostics(diagnostics, warnings) {
+  const lines = [];
+  if (diagnostics.length > 0) {
+    lines.push("Diagnostics:");
+    for (const item of diagnostics) {
+      lines.push(`- ${item}`);
+    }
+  } else {
+    lines.push("Diagnostics: none");
+  }
+
+  if (warnings.length > 0) {
+    lines.push("");
+    lines.push("Warnings:");
+    for (const item of warnings) {
+      lines.push(`- ${item}`);
+    }
+  }
+
+  diagnosticsOutput.textContent = lines.join("\n");
 }

@@ -91,7 +91,7 @@ public sealed class AssessmentParser : IAssessmentParser
                 Date = date,
                 Time = time,
                 DeliveryMode = deliveryMode
-            });
+            }, $"branch=pas_row_regex module={code}");
         }
     }
 
@@ -152,7 +152,7 @@ public sealed class AssessmentParser : IAssessmentParser
                     Date = date,
                     Time = time,
                     DeliveryMode = deliveryMode
-                });
+                }, $"branch=pas_module_block module={code} dateIndex={dateIndex + 1}");
             }
         }
     }
@@ -227,12 +227,21 @@ public sealed class AssessmentParser : IAssessmentParser
             : new TimeOnly(9, 0);
     }
 
-    private static void AddEventIfUnique(AssessmentPreviewResponse response, ISet<string> dedupe, AssessmentEvent ev)
+    private static void AddEventIfUnique(
+        AssessmentPreviewResponse response,
+        ISet<string> dedupe,
+        AssessmentEvent ev,
+        string diagnostic)
     {
         var key = $"{ev.ModuleCode}|{ev.AssessmentType}|{ev.Date:yyyy-MM-dd}|{ev.Time:HH:mm}|{ev.Sitting}";
         if (dedupe.Add(key))
         {
             response.Events.Add(ev);
+            response.Diagnostics.Add($"{diagnostic} key={key}");
+        }
+        else
+        {
+            response.Diagnostics.Add($"branch=dedupe_skip key={key}");
         }
     }
 

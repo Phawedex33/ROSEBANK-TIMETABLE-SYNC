@@ -52,8 +52,9 @@ public sealed class TimetableParser : ITimetableParser
         var lines = input
             .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-        foreach (var line in lines)
+        for (var i = 0; i < lines.Length; i++)
         {
+            var line = lines[i];
             var match = AcademicLinePattern.Match(line);
             if (match.Success)
             {
@@ -75,12 +76,14 @@ public sealed class TimetableParser : ITimetableParser
                     EndTime = end,
                     Subject = subject
                 });
+                result.Diagnostics.Add($"line {i + 1}: branch=academic_time_range");
                 continue;
             }
 
-            if (TryParseGridLine(line, periodMap, out var gridEvent))
+            if (TryParseGridLine(line, periodMap, out var gridEvent, out var gridBranch))
             {
                 result.AcademicEvents.Add(gridEvent);
+                result.Diagnostics.Add($"line {i + 1}: branch={gridBranch}");
             }
             else
             {
@@ -94,9 +97,11 @@ public sealed class TimetableParser : ITimetableParser
     private static bool TryParseGridLine(
         string line,
         IReadOnlyDictionary<int, (TimeOnly Start, TimeOnly End)> periodMap,
-        out ClassEvent classEvent)
+        out ClassEvent classEvent,
+        out string branch)
     {
         classEvent = default!;
+        branch = string.Empty;
         var match = AcademicGridPattern.Match(line);
         if (!match.Success)
         {
@@ -105,6 +110,11 @@ public sealed class TimetableParser : ITimetableParser
             {
                 return false;
             }
+            branch = "academic_grid_tail";
+        }
+        else
+        {
+            branch = "academic_grid_head";
         }
 
         if (!int.TryParse(match.Groups["period"].Value, out var period) || !periodMap.TryGetValue(period, out var slot))
@@ -243,6 +253,7 @@ public sealed class TimetableParser : ITimetableParser
                 Date = date,
                 Time = time
             });
+            result.Diagnostics.Add($"exam-line: branch=exam_line_regex module={moduleCode}");
         }
 
         if (result.ExamEvents.Count == 0)

@@ -62,4 +62,5 @@ Open:
 - Rosebank parsing heuristics added:
   - Academic: supports day/period grid-style lines (`Mo 3 ADDB6311 ...`, `ADDB6311 ... We 2`, optional `GR1/GR2/GR3`).
   - Assessment PAS: supports both single-line rows and fragmented multi-line module blocks, with fallback time defaults.
+- UI includes a parser diagnostics panel showing which parser branch matched each generated row.
 - OAuth token cache is stored in `backend/timetable-sync-token` after first auth.

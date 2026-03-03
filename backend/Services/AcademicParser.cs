@@ -20,7 +20,8 @@ public sealed class AcademicParser : IAcademicParser
             Group = group,
             ExtractedText = input,
             Events = parsed.AcademicEvents,
-            Warnings = parsed.Warnings
+            Warnings = parsed.Warnings,
+            Diagnostics = parsed.Diagnostics
         };
     }
 }
