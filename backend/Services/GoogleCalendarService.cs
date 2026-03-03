@@ -1,8 +1,10 @@
 using Google.Apis.Auth.OAuth2;
+using Google.Apis.Auth.OAuth2.Flows;
+using Google.Apis.Auth.OAuth2.Responses;
 using Google.Apis.Calendar.v3;
 using Google.Apis.Calendar.v3.Data;
 using Google.Apis.Services;
-using Google.Apis.Util.Store;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 using TimetableSync.Api.Models;
 
@@ -11,10 +13,12 @@ namespace TimetableSync.Api.Services;
 public sealed class GoogleCalendarService : IGoogleCalendarService
 {
     private readonly GoogleCalendarOptions _options;
+    private readonly IHttpContextAccessor _httpContextAccessor;
 
-    public GoogleCalendarService(IOptions<GoogleCalendarOptions> options)
+    public GoogleCalendarService(IOptions<GoogleCalendarOptions> options, IHttpContextAccessor httpContextAccessor)
     {
         _options = options.Value;
+        _httpContextAccessor = httpContextAccessor;
     }
 
     public async Task<SyncResponse> CreateWeeklyEventsAsync(SyncRequest request, CancellationToken cancellationToken)
@@ -175,22 +179,79 @@ public sealed class GoogleCalendarService : IGoogleCalendarService
 
     private async Task<CalendarService> CreateCalendarClientAsync(CancellationToken cancellationToken)
     {
-        var credential = await GoogleWebAuthorizationBroker.AuthorizeAsync(
-            new ClientSecrets
+        var session = _httpContextAccessor.HttpContext?.Session
+            ?? throw new InvalidOperationException("Session is not available.");
+
+        var accessToken = session.GetString("google_access_token");
+        var refreshToken = session.GetString("google_refresh_token");
+        if (string.IsNullOrWhiteSpace(accessToken) && string.IsNullOrWhiteSpace(refreshToken))
+        {
+            throw new InvalidOperationException("Google account not connected. Open /oauth/google/start first.");
+        }
+
+        var expiresAtRaw = session.GetString("google_token_expiry_utc");
+        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(5);
+        if (!string.IsNullOrWhiteSpace(expiresAtRaw) &&
+            DateTimeOffset.TryParse(expiresAtRaw, out var parsedExpiry))
+        {
+            expiresAt = parsedExpiry;
+        }
+
+        var expiresIn = Math.Max(1, (long)Math.Ceiling((expiresAt - DateTimeOffset.UtcNow).TotalSeconds));
+        var token = new TokenResponse
+        {
+            AccessToken = accessToken,
+            RefreshToken = refreshToken,
+            ExpiresInSeconds = expiresIn
+        };
+
+        var flow = new GoogleAuthorizationCodeFlow(new GoogleAuthorizationCodeFlow.Initializer
+        {
+            ClientSecrets = new ClientSecrets
             {
                 ClientId = _options.ClientId,
                 ClientSecret = _options.ClientSecret
             },
-            new[] { CalendarService.Scope.Calendar },
-            "user",
-            cancellationToken,
-            new FileDataStore("timetable-sync-token", true));
+            Scopes = new[] { CalendarService.Scope.Calendar }
+        });
+
+        var credential = new UserCredential(flow, "web-user", token);
+        if (credential.Token.IsStale)
+        {
+            var refreshed = await credential.RefreshTokenAsync(cancellationToken);
+            if (!refreshed)
+            {
+                throw new InvalidOperationException("Google token refresh failed. Reconnect using /oauth/google/start.");
+            }
+
+            PersistTokenToSession(session, credential.Token, refreshToken);
+        }
 
         return new CalendarService(new BaseClientService.Initializer
         {
             HttpClientInitializer = credential,
             ApplicationName = _options.ApplicationName
         });
+    }
+
+    private static void PersistTokenToSession(ISession session, TokenResponse token, string? existingRefreshToken)
+    {
+        if (!string.IsNullOrWhiteSpace(token.AccessToken))
+        {
+            session.SetString("google_access_token", token.AccessToken);
+        }
+
+        var refreshToken = !string.IsNullOrWhiteSpace(token.RefreshToken)
+            ? token.RefreshToken
+            : existingRefreshToken;
+        if (!string.IsNullOrWhiteSpace(refreshToken))
+        {
+            session.SetString("google_refresh_token", refreshToken);
+        }
+
+        var expiresIn = token.ExpiresInSeconds ?? 3600;
+        var expiresAt = DateTimeOffset.UtcNow.AddSeconds(Math.Max(1, expiresIn));
+        session.SetString("google_token_expiry_utc", expiresAt.ToString("O"));
     }
 
     private static string BuildExamDescription(ExamEvent item)
