@@ -58,3 +58,8 @@ Thumbs.db
 
 # Logs
 *.log
+
+# .NET
+**/bin/
+**/obj/
+backend/timetable-sync-token/

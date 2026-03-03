@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Timetable Sync</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="container">
+    <h1>Smart Timetable to Google Calendar Sync</h1>
+    <p class="sub">Upload timetable PDF/image, preview parsed classes, then sync recurring weekly events.</p>
+
+    <section class="card">
+      <label for="mode">Mode</label>
+      <select id="mode">
+        <option value="Academic">Academic (weekly classes)</option>
+        <option value="Exam">Exam (one-time assessments)</option>
+      </select>
+
+      <label for="fileInput">Timetable file (PDF/JPG/PNG)</label>
+      <input id="fileInput" type="file" accept=".pdf,.png,.jpg,.jpeg" />
+      <button id="previewBtn">Preview From File</button>
+    </section>
+
+    <section class="card">
+      <label for="textInput">Fallback: paste extracted text</label>
+      <textarea id="textInput" rows="8" placeholder="Paste timetable text here when PDF extraction is messy..."></textarea>
+      <button id="previewTextBtn">Preview From Pasted Text</button>
+    </section>
+
+    <section class="card">
+      <label for="semesterEndDate">Semester End Date (Academic sync)</label>
+      <input id="semesterEndDate" type="date" />
+
+      <label for="timeZone">Time Zone</label>
+      <input id="timeZone" type="text" value="Africa/Johannesburg" />
+
+      <button id="syncBtn">Sync to Google Calendar</button>
+    </section>
+
+    <section class="card">
+      <h2>Extracted Text</h2>
+      <pre id="textOutput">No data yet.</pre>
+    </section>
+
+    <section class="card">
+      <h2>Parsed Events</h2>
+      <pre id="eventsOutput">No events yet.</pre>
+    </section>
+
+    <section class="card">
+      <h2>Status</h2>
+      <pre id="statusOutput">Ready.</pre>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
