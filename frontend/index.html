@@ -26,7 +26,7 @@
         <textarea id="assessmentText" rows="5" placeholder="Paste extracted assessment text here..."></textarea>
       </div>
 
-      <button id="previewBtn">Preview</button>
+      <button id="previewBtn" type="button">Preview</button>
     </section>
 
     <section class="card" id="academicFields">
@@ -79,9 +79,17 @@
     </section>
 
     <section class="card">
+      <div class="row">
+        <h2>Google Calendar Connection</h2>
+        <button id="connectGoogleBtn" type="button">Connect Google Calendar</button>
+      </div>
+      <p id="authStatus" class="hint">Checking connection...</p>
+    </section>
+
+    <section class="card">
       <label for="timeZone">Time Zone</label>
       <input id="timeZone" type="text" value="Africa/Johannesburg" />
-      <button id="syncBtn">Sync Edited Events</button>
+      <button id="syncBtn" type="button" disabled>Sync Edited Events</button>
     </section>
 
     <section class="card" id="academicTableWrap">

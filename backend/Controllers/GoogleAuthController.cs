@@ -47,6 +47,21 @@ public sealed class GoogleAuthController : ControllerBase
         return Redirect(authUrl);
     }
 
+    [HttpGet("status")]
+    public IActionResult Status()
+    {
+        var accessToken = HttpContext.Session.GetString("google_access_token");
+        var refreshToken = HttpContext.Session.GetString("google_refresh_token");
+        var expiryUtc = HttpContext.Session.GetString("google_token_expiry_utc");
+        var connected = !string.IsNullOrWhiteSpace(accessToken) || !string.IsNullOrWhiteSpace(refreshToken);
+
+        return Ok(new
+        {
+            connected,
+            expiresAtUtc = expiryUtc
+        });
+    }
+
     [HttpGet("callback")]
     public async Task<IActionResult> Callback([FromQuery] string? code, [FromQuery] string? state, [FromQuery] string? error, CancellationToken cancellationToken)
     {
@@ -104,7 +119,7 @@ public sealed class GoogleAuthController : ControllerBase
         HttpContext.Session.SetString("google_token_expiry_utc", expiresAtUtc.ToString("O"));
         HttpContext.Session.Remove("google_oauth_state");
 
-        return Redirect("/");
+        return Redirect("/?google=connected");
     }
 
     private sealed class GoogleTokenResponse

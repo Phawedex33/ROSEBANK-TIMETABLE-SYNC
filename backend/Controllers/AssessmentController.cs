@@ -49,7 +49,14 @@ public sealed class AssessmentController : ControllerBase
             return BadRequest("At least one assessment event is required.");
         }
 
-        var response = await _calendar.CreateAssessmentEventsAsync(request, cancellationToken);
-        return Ok(response);
+        try
+        {
+            var response = await _calendar.CreateAssessmentEventsAsync(request, cancellationToken);
+            return Ok(response);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ex.Message);
+        }
     }
 }

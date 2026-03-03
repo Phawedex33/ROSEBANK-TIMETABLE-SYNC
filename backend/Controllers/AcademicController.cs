@@ -47,14 +47,21 @@ public sealed class AcademicController : ControllerBase
             return BadRequest("At least one class event is required.");
         }
 
-        var response = await _calendar.CreateWeeklyEventsAsync(new SyncRequest
+        try
         {
-            Events = request.Events,
-            SemesterEndDate = request.SemesterEndDate,
-            WeeksDuration = request.WeeksDuration,
-            TimeZone = request.TimeZone
-        }, cancellationToken);
+            var response = await _calendar.CreateWeeklyEventsAsync(new SyncRequest
+            {
+                Events = request.Events,
+                SemesterEndDate = request.SemesterEndDate,
+                WeeksDuration = request.WeeksDuration,
+                TimeZone = request.TimeZone
+            }, cancellationToken);
 
-        return Ok(response);
+            return Ok(response);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ex.Message);
+        }
     }
 }

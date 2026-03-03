@@ -85,6 +85,11 @@ button:hover {
   filter: brightness(1.05);
 }
 
+button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
 pre {
   white-space: pre-wrap;
   word-break: break-word;

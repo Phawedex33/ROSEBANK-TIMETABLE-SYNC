@@ -7,6 +7,7 @@ let academicRows = [];
 let assessmentRows = [];
 let availableModules = [];
 let selectedModules = new Set();
+let isGoogleConnected = false;
 
 const modeInput = document.getElementById("mode");
 const fileInput = document.getElementById("fileInput");
@@ -24,6 +25,8 @@ const academicBody = document.getElementById("academicBody");
 const assessmentBody = document.getElementById("assessmentBody");
 const previewBtn = document.getElementById("previewBtn");
 const syncBtn = document.getElementById("syncBtn");
+const connectGoogleBtn = document.getElementById("connectGoogleBtn");
+const authStatus = document.getElementById("authStatus");
 const addAcademicRowBtn = document.getElementById("addAcademicRowBtn");
 const addAssessmentRowBtn = document.getElementById("addAssessmentRowBtn");
 const selectAllModulesBtn = document.getElementById("selectAllModulesBtn");
@@ -32,36 +35,44 @@ const textOutput = document.getElementById("textOutput");
 const diagnosticsOutput = document.getElementById("diagnosticsOutput");
 const statusOutput = document.getElementById("statusOutput");
 
-modeInput.addEventListener("change", applyMode);
-previewBtn.addEventListener("click", onPreview);
-syncBtn.addEventListener("click", onSync);
-selectAllModulesBtn.addEventListener("click", () => {
-  selectedModules = new Set(availableModules);
-  renderModules();
-});
-addAcademicRowBtn.addEventListener("click", () => {
-  academicRows.push({ day: "Monday", startTime: "08:00", endTime: "08:50", subject: "" });
-  refreshModulePicker();
-  renderAcademicTable();
-});
-addAssessmentRowBtn.addEventListener("click", () => {
-  assessmentRows.push({
-    moduleCode: "",
-    moduleName: "",
-    assessmentType: "",
-    date: "",
-    time: "23:59",
-    deliveryMode: "Unspecified",
-    sitting: null
-  });
-  refreshModulePicker();
-  renderAssessmentTable();
-});
+initializeUi();
 
-applyMode();
-renderAcademicTable();
-renderAssessmentTable();
-refreshModulePicker();
+function initializeUi() {
+  modeInput.addEventListener("change", applyMode);
+  previewBtn.addEventListener("click", onPreview);
+  syncBtn.addEventListener("click", onSync);
+  connectGoogleBtn.addEventListener("click", () => {
+    window.location.href = "/oauth/google/start";
+  });
+  selectAllModulesBtn.addEventListener("click", () => {
+    selectedModules = new Set(availableModules);
+    renderModules();
+  });
+  addAcademicRowBtn.addEventListener("click", () => {
+    academicRows.push({ day: "Monday", startTime: "08:00", endTime: "08:50", subject: "" });
+    refreshModulePicker();
+    renderAcademicTable();
+  });
+  addAssessmentRowBtn.addEventListener("click", () => {
+    assessmentRows.push({
+      moduleCode: "",
+      moduleName: "",
+      assessmentType: "",
+      date: "",
+      time: "23:59",
+      deliveryMode: "Unspecified",
+      sitting: null
+    });
+    refreshModulePicker();
+    renderAssessmentTable();
+  });
+
+  applyMode();
+  renderAcademicTable();
+  renderAssessmentTable();
+  refreshModulePicker();
+  updateGoogleAuthStatus();
+}
 
 function applyMode() {
   const isAcademic = modeInput.value === "academic";
@@ -77,6 +88,7 @@ function applyMode() {
 }
 
 async function onPreview() {
+  setBusy(previewBtn, true, "Previewing...");
   try {
     statusOutput.textContent = "Parsing file...";
 
@@ -88,6 +100,8 @@ async function onPreview() {
     await previewAssessment();
   } catch (err) {
     statusOutput.textContent = err.message;
+  } finally {
+    setBusy(previewBtn, false, "Preview");
   }
 }
 
@@ -174,7 +188,12 @@ async function previewAssessment() {
 }
 
 async function onSync() {
+  setBusy(syncBtn, true, "Syncing...");
   try {
+    if (syncBtn.disabled) {
+      throw new Error("Connect Google Calendar first.");
+    }
+
     if (modeInput.value === "academic") {
       await syncAcademic();
       return;
@@ -183,6 +202,36 @@ async function onSync() {
     await syncAssessment();
   } catch (err) {
     statusOutput.textContent = err.message;
+  } finally {
+    setBusy(syncBtn, false, "Sync Edited Events");
+  }
+}
+
+async function updateGoogleAuthStatus() {
+  try {
+    const res = await fetch("/oauth/google/status", { method: "GET" });
+    if (!res.ok) {
+      throw new Error("Unable to check Google auth status.");
+    }
+
+    const data = await res.json();
+    if (data.connected) {
+      isGoogleConnected = true;
+      syncBtn.disabled = false;
+      authStatus.textContent = "Connected to Google Calendar.";
+      if (new URLSearchParams(window.location.search).get("google") === "connected") {
+        statusOutput.textContent = "Google connection successful. You can sync now.";
+      }
+      return;
+    }
+
+    isGoogleConnected = false;
+    syncBtn.disabled = true;
+    authStatus.textContent = "Not connected. Click 'Connect Google Calendar' before syncing.";
+  } catch {
+    isGoogleConnected = false;
+    syncBtn.disabled = true;
+    authStatus.textContent = "Could not verify Google connection.";
   }
 }
 
@@ -466,4 +515,9 @@ function updateDiagnostics(diagnostics, warnings) {
   }
 
   diagnosticsOutput.textContent = lines.join("\n");
+}
+
+function setBusy(button, busy, label) {
+  button.disabled = busy || (button === syncBtn && !isGoogleConnected);
+  button.textContent = label;
 }
