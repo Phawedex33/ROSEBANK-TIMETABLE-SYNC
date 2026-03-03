@@ -59,4 +59,7 @@ Open:
 - Text fallback is available via `preview-text` for messy PDFs.
 - Assessment sync creates one-time events with popup reminders (24h and 2h) and red color.
 - Academic recurring events are created with `[CLASS]` prefix and blue color.
+- Rosebank parsing heuristics added:
+  - Academic: supports day/period grid-style lines (`Mo 3 ADDB6311 ...`, `ADDB6311 ... We 2`, optional `GR1/GR2/GR3`).
+  - Assessment PAS: supports both single-line rows and fragmented multi-line module blocks, with fallback time defaults.
 - OAuth token cache is stored in `backend/timetable-sync-token` after first auth.

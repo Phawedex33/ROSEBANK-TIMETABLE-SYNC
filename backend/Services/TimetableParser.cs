@@ -10,6 +10,14 @@ public sealed class TimetableParser : ITimetableParser
         "^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\\s+(\\d{2}:\\d{2})-(\\d{2}:\\d{2})\\s+(.+)$",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+    private static readonly Regex AcademicGridPattern = new(
+        "^(?:(?<group>GR[123])\\s+)?(?<day>Mo|Tu|We|Th|Fr|Sa|Su|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\\s+(?:P(?:eriod)?\\s*)?(?<period>[1-9])\\s+(?<subject>[A-Z]{4}\\d{4}.*)$",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex AcademicGridTailPattern = new(
+        "^(?<subject>[A-Z]{4}\\d{4}.*?)\\s+(?:(?<group>GR[123])\\s+)?(?<day>Mo|Tu|We|Th|Fr|Sa|Su|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\\s+(?:P(?:eriod)?\\s*)?(?<period>[1-9])$",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
     private static readonly Regex ExamLinePattern = new(
         "^(?<code>[A-Z]{4}\\d{4})\\s+(?<name>.+?)\\s+(?<type>Test|Exam|Assignment|Practical|Project|Quiz|Presentation)(?<tail>.*)$",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -39,40 +47,146 @@ public sealed class TimetableParser : ITimetableParser
     private static TimetableParseResult ParseAcademic(string input)
     {
         var result = new TimetableParseResult();
+        var periodMap = GetPeriodMap();
 
         var lines = input
-            .Split(new[] { '\\r', '\\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
         foreach (var line in lines)
         {
             var match = AcademicLinePattern.Match(line);
-            if (!match.Success)
+            if (match.Success)
+            {
+                var day = Enum.Parse<DayOfWeek>(match.Groups[1].Value, true);
+                var start = TimeOnly.ParseExact(match.Groups[2].Value, "HH:mm", CultureInfo.InvariantCulture);
+                var end = TimeOnly.ParseExact(match.Groups[3].Value, "HH:mm", CultureInfo.InvariantCulture);
+                var subject = match.Groups[4].Value.Trim();
+
+                if (end <= start)
+                {
+                    result.Warnings.Add($"Skipped line: '{line}' (end time must be after start time)");
+                    continue;
+                }
+
+                result.AcademicEvents.Add(new ClassEvent
+                {
+                    Day = day,
+                    StartTime = start,
+                    EndTime = end,
+                    Subject = subject
+                });
+                continue;
+            }
+
+            if (TryParseGridLine(line, periodMap, out var gridEvent))
+            {
+                result.AcademicEvents.Add(gridEvent);
+            }
+            else
             {
                 result.Warnings.Add($"Skipped line: '{line}' (invalid academic format)");
-                continue;
             }
-
-            var day = Enum.Parse<DayOfWeek>(match.Groups[1].Value, true);
-            var start = TimeOnly.ParseExact(match.Groups[2].Value, "HH:mm", CultureInfo.InvariantCulture);
-            var end = TimeOnly.ParseExact(match.Groups[3].Value, "HH:mm", CultureInfo.InvariantCulture);
-            var subject = match.Groups[4].Value.Trim();
-
-            if (end <= start)
-            {
-                result.Warnings.Add($"Skipped line: '{line}' (end time must be after start time)");
-                continue;
-            }
-
-            result.AcademicEvents.Add(new ClassEvent
-            {
-                Day = day,
-                StartTime = start,
-                EndTime = end,
-                Subject = subject
-            });
         }
 
         return result;
+    }
+
+    private static bool TryParseGridLine(
+        string line,
+        IReadOnlyDictionary<int, (TimeOnly Start, TimeOnly End)> periodMap,
+        out ClassEvent classEvent)
+    {
+        classEvent = default!;
+        var match = AcademicGridPattern.Match(line);
+        if (!match.Success)
+        {
+            match = AcademicGridTailPattern.Match(line);
+            if (!match.Success)
+            {
+                return false;
+            }
+        }
+
+        if (!int.TryParse(match.Groups["period"].Value, out var period) || !periodMap.TryGetValue(period, out var slot))
+        {
+            return false;
+        }
+
+        if (!TryParseDay(match.Groups["day"].Value, out var day))
+        {
+            return false;
+        }
+
+        var subject = match.Groups["subject"].Value.Trim();
+        if (match.Groups["group"].Success)
+        {
+            subject = $"{subject} | {match.Groups["group"].Value.Trim().ToUpperInvariant()}";
+        }
+
+        classEvent = new ClassEvent
+        {
+            Day = day,
+            StartTime = slot.Start,
+            EndTime = slot.End,
+            Subject = subject
+        };
+
+        return true;
+    }
+
+    private static bool TryParseDay(string value, out DayOfWeek day)
+    {
+        var normalized = value.Trim().ToLowerInvariant();
+        switch (normalized)
+        {
+            case "mo":
+            case "monday":
+                day = DayOfWeek.Monday;
+                return true;
+            case "tu":
+            case "tuesday":
+                day = DayOfWeek.Tuesday;
+                return true;
+            case "we":
+            case "wednesday":
+                day = DayOfWeek.Wednesday;
+                return true;
+            case "th":
+            case "thursday":
+                day = DayOfWeek.Thursday;
+                return true;
+            case "fr":
+            case "friday":
+                day = DayOfWeek.Friday;
+                return true;
+            case "sa":
+            case "saturday":
+                day = DayOfWeek.Saturday;
+                return true;
+            case "su":
+            case "sunday":
+                day = DayOfWeek.Sunday;
+                return true;
+            default:
+                day = default;
+                return false;
+        }
+    }
+
+    private static IReadOnlyDictionary<int, (TimeOnly Start, TimeOnly End)> GetPeriodMap()
+    {
+        return new Dictionary<int, (TimeOnly Start, TimeOnly End)>
+        {
+            [1] = (new TimeOnly(8, 0), new TimeOnly(8, 50)),
+            [2] = (new TimeOnly(9, 0), new TimeOnly(9, 50)),
+            [3] = (new TimeOnly(10, 0), new TimeOnly(10, 50)),
+            [4] = (new TimeOnly(11, 0), new TimeOnly(11, 50)),
+            [5] = (new TimeOnly(12, 0), new TimeOnly(12, 50)),
+            [6] = (new TimeOnly(13, 0), new TimeOnly(13, 50)),
+            [7] = (new TimeOnly(14, 0), new TimeOnly(14, 50)),
+            [8] = (new TimeOnly(15, 0), new TimeOnly(15, 50)),
+            [9] = (new TimeOnly(16, 0), new TimeOnly(16, 50))
+        };
     }
 
     private static TimetableParseResult ParseExam(string input)
@@ -80,7 +194,7 @@ public sealed class TimetableParser : ITimetableParser
         var result = new TimetableParseResult();
 
         var lines = input
-            .Split(new[] { '\\r', '\\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(line => line.Length > 5)
             .ToArray();
 
