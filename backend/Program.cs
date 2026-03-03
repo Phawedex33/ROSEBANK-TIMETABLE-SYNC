@@ -16,6 +16,7 @@ builder.Services.Configure<GoogleCalendarOptions>(builder.Configuration.GetSecti
 
 builder.Services.AddScoped<ITextExtractionService, TextExtractionService>();
 builder.Services.AddScoped<ITimetableParser, TimetableParser>();
+builder.Services.AddScoped<IAcademicScheduleBuilder, AcademicScheduleBuilder>();
 builder.Services.AddScoped<IGoogleCalendarService, GoogleCalendarService>();
 
 builder.Services.AddCors(options =>

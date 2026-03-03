@@ -30,6 +30,15 @@
     </section>
 
     <section class="card">
+      <label for="groupInput">Academic Group (assisted mode)</label>
+      <input id="groupInput" type="text" placeholder="Example: GR1" />
+
+      <label for="academicDraftInput">Academic Draft Rows (JSON array)</label>
+      <textarea id="academicDraftInput" rows="8" placeholder='[{"day":"Monday","period":1,"subject":"ADDB6311","lecturer":"Dr X","venue":"LAB 2"}]'></textarea>
+      <button id="buildAcademicBtn">Build Academic Events From Draft</button>
+    </section>
+
+    <section class="card">
       <label for="semesterEndDate">Semester End Date (Academic sync)</label>
       <input id="semesterEndDate" type="date" />
 

@@ -20,6 +20,7 @@ Each line should follow:
 ### Modes
 - `Academic`: parses weekly class lines and syncs recurring events.
 - `Exam`: parses one-time assessment lines and syncs one-time events.
+- `Academic Assisted`: use `group + day + period` JSON rows and convert with fixed period times.
 
 ### Backend Setup
 1. Install .NET 8 SDK.
@@ -42,6 +43,7 @@ Open:
 ### Endpoints
 - `POST /api/upload/preview` (`multipart/form-data`, fields: `file`, `mode`)
 - `POST /api/upload/preview-text` (`application/json`, body: `{ "mode": "Academic|Exam", "text": "..." }`)
+- `POST /api/upload/build-academic` (`application/json`, body with `group` and draft `rows`)
 - `POST /api/upload/sync` (`application/json`, academic recurring events)
 - `POST /api/upload/sync-exam` (`application/json`, exam one-time events)
 

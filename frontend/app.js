@@ -6,10 +6,13 @@ let parsedExamEvents = [];
 const fileInput = document.getElementById("fileInput");
 const modeInput = document.getElementById("mode");
 const textInput = document.getElementById("textInput");
+const groupInput = document.getElementById("groupInput");
+const academicDraftInput = document.getElementById("academicDraftInput");
 const semesterEndDateInput = document.getElementById("semesterEndDate");
 const timeZoneInput = document.getElementById("timeZone");
 const previewBtn = document.getElementById("previewBtn");
 const previewTextBtn = document.getElementById("previewTextBtn");
+const buildAcademicBtn = document.getElementById("buildAcademicBtn");
 const syncBtn = document.getElementById("syncBtn");
 const textOutput = document.getElementById("textOutput");
 const eventsOutput = document.getElementById("eventsOutput");
@@ -73,6 +76,60 @@ previewTextBtn.addEventListener("click", async () => {
 
     const data = await res.json();
     applyPreviewResult(data);
+  } catch (err) {
+    statusOutput.textContent = err.message;
+  }
+});
+
+buildAcademicBtn.addEventListener("click", async () => {
+  if (!academicDraftInput.value.trim()) {
+    statusOutput.textContent = "Paste academic draft JSON rows first.";
+    return;
+  }
+
+  let rows;
+  try {
+    rows = JSON.parse(academicDraftInput.value);
+    if (!Array.isArray(rows)) {
+      throw new Error("JSON must be an array.");
+    }
+  } catch (err) {
+    statusOutput.textContent = `Invalid JSON: ${err.message}`;
+    return;
+  }
+
+  statusOutput.textContent = "Building academic events from period mapping...";
+
+  try {
+    const res = await fetch(`${apiBase}/build-academic`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        group: groupInput.value || "",
+        rows
+      })
+    });
+
+    if (!res.ok) {
+      const error = await res.text();
+      throw new Error(error || "Build academic failed.");
+    }
+
+    const data = await res.json();
+    parsedAcademicEvents = data.events || [];
+    modeInput.value = "Academic";
+    eventsOutput.textContent = JSON.stringify(
+      {
+        mode: "Academic",
+        academicEvents: parsedAcademicEvents,
+        warnings: data.warnings || []
+      },
+      null,
+      2
+    );
+    statusOutput.textContent = `Academic build complete: ${parsedAcademicEvents.length} event(s).`;
   } catch (err) {
     statusOutput.textContent = err.message;
   }

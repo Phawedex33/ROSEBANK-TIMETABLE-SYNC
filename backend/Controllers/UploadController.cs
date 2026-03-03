@@ -10,15 +10,18 @@ public sealed class UploadController : ControllerBase
 {
     private readonly ITextExtractionService _extractor;
     private readonly ITimetableParser _parser;
+    private readonly IAcademicScheduleBuilder _scheduleBuilder;
     private readonly IGoogleCalendarService _calendar;
 
     public UploadController(
         ITextExtractionService extractor,
         ITimetableParser parser,
+        IAcademicScheduleBuilder scheduleBuilder,
         IGoogleCalendarService calendar)
     {
         _extractor = extractor;
         _parser = parser;
+        _scheduleBuilder = scheduleBuilder;
         _calendar = calendar;
     }
 
@@ -76,6 +79,56 @@ public sealed class UploadController : ControllerBase
 
         var response = await _calendar.CreateWeeklyEventsAsync(request, cancellationToken);
         return Ok(response);
+    }
+
+    [HttpPost("build-academic")]
+    public IActionResult BuildAcademic([FromBody] AcademicBuildRequest request)
+    {
+        if (request.Rows.Count == 0)
+        {
+            return BadRequest("At least one academic row is required.");
+        }
+
+        var events = new List<ClassEvent>();
+        var warnings = new List<string>();
+
+        foreach (var row in request.Rows)
+        {
+            var slot = _scheduleBuilder.ResolvePeriod(row.Period);
+            if (slot is null)
+            {
+                warnings.Add($"Skipped period {row.Period} for {row.Subject}: invalid period.");
+                continue;
+            }
+
+            var details = row.Subject.Trim();
+            if (!string.IsNullOrWhiteSpace(row.Lecturer))
+            {
+                details += $" | {row.Lecturer.Trim()}";
+            }
+            if (!string.IsNullOrWhiteSpace(row.Venue))
+            {
+                details += $" | {row.Venue.Trim()}";
+            }
+            if (!string.IsNullOrWhiteSpace(request.Group))
+            {
+                details += $" | {request.Group.Trim()}";
+            }
+
+            events.Add(new ClassEvent
+            {
+                Day = row.Day,
+                StartTime = slot.Value.Start,
+                EndTime = slot.Value.End,
+                Subject = details
+            });
+        }
+
+        return Ok(new
+        {
+            events,
+            warnings
+        });
     }
 
     [HttpPost("sync-exam")]
