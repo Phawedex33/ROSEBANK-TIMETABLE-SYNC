@@ -6,12 +6,19 @@ namespace TimetableSync.Api.Services;
 
 public sealed class AssessmentParser : IAssessmentParser
 {
+    private const string DateToken = "\\d{1,2}(?:[-/ ]?)(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|\\d{1,2})(?:[-/ ]?)\\d{2,4}";
+    private const string TimeToken = "(?:[01]?\\d|2[0-3]):[0-5]\\d|23:59";
+
+    private static readonly Regex SegmentPattern = new(
+        "(?<prog>DIS\\d)\\s+(?<code>[A-Z]{4}\\d{4})\\s+(?<name>.+?)\\s+(?<type>Practical\\s+Assignment\\s*\\d*(?:\\s+Deferred)?|Practical\\s+Test\\s*\\d*(?:\\s+Deferred)?|Theory\\s+Test\\s*\\d*(?:\\s+Deferred)?|Final\\s+Exam|Assignment\\s*\\d*(?:\\s+Deferred)?|Project\\s*\\d*(?:\\s+Deferred)?|Test\\s*\\d*(?:\\s+Sitting\\s*[12])?|Part\\s*\\d*(?:\\s+Deferred)?|Task\\s*\\d*(?:\\s+Deferred)?|Exam|Quiz\\s*\\d*|Presentation\\s*\\d*)\\s+(?<delivery>Campus\\s+Sitting|Online\\s+Submission(?:\\s+Turnitin)?)\\s+(?<date>" + DateToken + ")\\s+(?<time>" + TimeToken + ")(?=\\s+DIS\\d\\s+[A-Z]{4}\\d{4}\\b|$)",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
+
     private static readonly Regex RowPattern = new(
-        "(?<code>[A-Z]{4}\\d{4})\\s+(?<name>.+?)\\s+(?<type>Practical\\s+Assignment\\s*\\d*|Practical\\s+Test\\s*\\d*|Theory\\s+Test\\s*\\d*|Final\\s+Exam|Assignment\\s*\\d*|Test\\s*\\d*|Exam|Project\\s*\\d*|Quiz\\s*\\d*|Presentation\\s*\\d*)\\s*(?<tail>.*?)\\s+(?<date>\\d{1,2}[-/](?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|\\d{1,2})[-/]\\d{2,4})\\s+(?<time>(?:[01]?\\d|2[0-3]):[0-5]\\d|23:59)",
+        "(?<code>[A-Z]{4}\\d{4})\\s+(?<name>.+?)\\s+(?<type>Practical\\s+Assignment\\s*\\d*|Practical\\s+Test\\s*\\d*|Theory\\s+Test\\s*\\d*|Final\\s+Exam|Assignment\\s*\\d*|Test\\s*\\d*|Exam|Project\\s*\\d*|Quiz\\s*\\d*|Presentation\\s*\\d*)\\s*(?<tail>.*?)\\s+(?<date>" + DateToken + ")\\s+(?<time>" + TimeToken + ")",
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
 
     private static readonly Regex PasLinePattern = new(
-        "^DIS\\d\\s+(?<code>[A-Z]{4}\\d{4})\\s+(?<name>.+?)\\s+(?<type>Practical\\s+Assignment\\s*\\d*|Practical\\s+Test\\s*\\d*|Theory\\s+Test\\s*\\d*|Final\\s+Exam|Assignment\\s*\\d*(?:\\s+Deferred)?|Project\\s*\\d*(?:\\s+Deferred)?|Test\\s*\\d*(?:\\s+Sitting\\s*[12])?|Part\\s*\\d*(?:\\s+Deferred)?|Task\\s*\\d*(?:\\s+Deferred)?|Exam|Quiz\\s*\\d*|Presentation\\s*\\d*)\\s+(?<delivery>Campus\\s+Sitting|Online\\s+Submission(?:\\s+Turnitin)?)\\s+(?<date>\\d{1,2}[-/](?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|\\d{1,2})[-/]\\d{2,4})\\s+(?<time>(?:[01]?\\d|2[0-3]):[0-5]\\d|23:59)$",
+        "^DIS\\d\\s+(?<code>[A-Z]{4}\\d{4})\\s+(?<name>.+?)\\s+(?<type>Practical\\s+Assignment\\s*\\d*|Practical\\s+Test\\s*\\d*|Theory\\s+Test\\s*\\d*|Final\\s+Exam|Assignment\\s*\\d*(?:\\s+Deferred)?|Project\\s*\\d*(?:\\s+Deferred)?|Test\\s*\\d*(?:\\s+Sitting\\s*[12])?|Part\\s*\\d*(?:\\s+Deferred)?|Task\\s*\\d*(?:\\s+Deferred)?|Exam|Quiz\\s*\\d*|Presentation\\s*\\d*)\\s+(?<delivery>Campus\\s+Sitting|Online\\s+Submission(?:\\s+Turnitin)?)\\s+(?<date>" + DateToken + ")\\s+(?<time>" + TimeToken + ")$",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private static readonly Regex ModuleCodePattern = new(
@@ -19,11 +26,11 @@ public sealed class AssessmentParser : IAssessmentParser
         RegexOptions.Compiled);
 
     private static readonly Regex DatePattern = new(
-        "\\b(?<date>\\d{1,2}[-/](?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|\\d{1,2})[-/]\\d{2,4})\\b",
+        "\\b(?<date>" + DateToken + ")\\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private static readonly Regex TimePattern = new(
-        "\\b(?<time>(?:[01]?\\d|2[0-3]):[0-5]\\d|23:59)\\b",
+        "\\b(?<time>" + TimeToken + ")\\b",
         RegexOptions.Compiled);
 
     private static readonly Regex AssessmentTypePattern = new(
@@ -44,8 +51,12 @@ public sealed class AssessmentParser : IAssessmentParser
         };
         var dedupe = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        ParseRowMatches(preprocessed, normalized, response, dedupe);
-        ParseModuleBlocks(preprocessed, response, dedupe);
+        ParseSegmentMatches(normalized, response, dedupe);
+        if (response.Events.Count == 0)
+        {
+            ParseRowMatches(preprocessed, normalized, response, dedupe);
+            ParseModuleBlocks(preprocessed, response, dedupe);
+        }
 
         if (response.Events.Count == 0)
         {
@@ -53,6 +64,51 @@ public sealed class AssessmentParser : IAssessmentParser
         }
 
         return response;
+    }
+
+    private static void ParseSegmentMatches(string normalizedInput, AssessmentPreviewResponse response, ISet<string> dedupe)
+    {
+        var matches = SegmentPattern.Matches(normalizedInput);
+        foreach (Match match in matches)
+        {
+            var code = match.Groups["code"].Value.Trim().ToUpperInvariant();
+            var name = NormalizeText(match.Groups["name"].Value);
+            var type = NormalizeText(match.Groups["type"].Value);
+            var dateRaw = match.Groups["date"].Value.Trim();
+            var timeRaw = match.Groups["time"].Value.Trim();
+            var deliveryRaw = NormalizeText(match.Groups["delivery"].Value);
+
+            if (!TryParseDate(dateRaw, out var date))
+            {
+                response.Warnings.Add($"Skipped {code}: invalid date '{dateRaw}'.");
+                continue;
+            }
+
+            if (!TimeOnly.TryParse(timeRaw, CultureInfo.InvariantCulture, DateTimeStyles.None, out var time))
+            {
+                response.Warnings.Add($"Skipped {code}: invalid time '{timeRaw}'.");
+                continue;
+            }
+
+            int? sitting = null;
+            var sittingMatch = SittingPattern.Match(type);
+            if (sittingMatch.Success)
+            {
+                sitting = int.Parse(sittingMatch.Groups["sitting"].Value, CultureInfo.InvariantCulture);
+                type = Regex.Replace(type, "\\s+Sitting\\s*[12]", string.Empty, RegexOptions.IgnoreCase).Trim();
+            }
+
+            AddEventIfUnique(response, dedupe, new AssessmentEvent
+            {
+                ModuleCode = code,
+                ModuleName = name,
+                AssessmentType = type,
+                Sitting = sitting,
+                Date = date,
+                Time = time,
+                DeliveryMode = DetectDeliveryMode(deliveryRaw)
+            }, $"branch=pas_segment_regex module={code}");
+        }
     }
 
     private static void ParseRowMatches(string preprocessedInput, string normalizedInput, AssessmentPreviewResponse response, ISet<string> dedupe)
@@ -304,7 +360,9 @@ public sealed class AssessmentParser : IAssessmentParser
         var formats = new[]
         {
             "d-MMM-yy", "dd-MMM-yy", "d-MMM-yyyy", "dd-MMM-yyyy",
-            "d-M-yyyy", "dd-M-yyyy", "d-M-yy", "dd-M-yy"
+            "d-M-yyyy", "dd-M-yyyy", "d-M-yy", "dd-M-yy",
+            "d MMM yy", "dd MMM yy", "d MMMyy", "dd MMMyy",
+            "d MMM yyyy", "dd MMM yyyy"
         };
 
         foreach (var format in formats)
@@ -330,9 +388,9 @@ public sealed class AssessmentParser : IAssessmentParser
         expanded = Regex.Replace(expanded, "(?<=\\d)(?=[A-Z])", " ");
         expanded = Regex.Replace(expanded, "(?<=[0-9])(?=DIS\\d\\b)", "\n");
         expanded = Regex.Replace(expanded, "(?<=[0-9])(?=[A-Z]{4}\\d{4}\\b)", " ");
-        expanded = Regex.Replace(expanded, "(?<=[A-Za-z])(?=\\d{1,2}-[A-Za-z]{3}-\\d{2,4})", " ");
+        expanded = Regex.Replace(expanded, "(?<=[A-Za-z])(?=\\d{1,2}(?:[-/ ]?)[A-Za-z]{3}(?:[-/ ]?)\\d{2,4})", " ");
         expanded = Regex.Replace(expanded, "(?<=[A-Za-z])(?=\\d{2}:\\d{2})", " ");
-        expanded = Regex.Replace(expanded, "(?<date>\\d{1,2}-[A-Za-z]{3}-\\d{2,4})(?<time>\\d{2}:\\d{2})", "${date} ${time}");
+        expanded = Regex.Replace(expanded, "(?<date>\\d{1,2}(?:[-/ ]?)[A-Za-z]{3}(?:[-/ ]?)\\d{2,4})(?<time>\\d{2}:\\d{2})", "${date} ${time}");
         expanded = Regex.Replace(expanded, "[ \\t\\r\\f\\v]+", " ");
         expanded = expanded.Replace(" DIS1 ", "\nDIS1 ");
         expanded = expanded.Replace(" DIS2 ", "\nDIS2 ");
