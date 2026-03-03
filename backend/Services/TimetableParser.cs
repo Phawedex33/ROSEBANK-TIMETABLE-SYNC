@@ -49,6 +49,13 @@ public sealed class TimetableParser : ITimetableParser
         var result = new TimetableParseResult();
         var periodMap = GetPeriodMap();
 
+        if (LooksLikeAssessmentTimetable(input))
+        {
+            result.Warnings.Add("This looks like an assessment/PAS timetable. Switch Timetable Type to 'Exam / Assessment Timetable' and preview again.");
+            result.Diagnostics.Add("branch=academic_wrong_mode_detected_pas");
+            return result;
+        }
+
         var lines = input
             .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
@@ -92,6 +99,20 @@ public sealed class TimetableParser : ITimetableParser
         }
 
         return result;
+    }
+
+    private static bool LooksLikeAssessmentTimetable(string input)
+    {
+        var hasPasKeywords =
+            input.Contains("Assessment Timetable", StringComparison.OrdinalIgnoreCase) ||
+            input.Contains("Campus Sitting", StringComparison.OrdinalIgnoreCase) ||
+            input.Contains("Online Submission", StringComparison.OrdinalIgnoreCase) ||
+            input.Contains("Turnitin", StringComparison.OrdinalIgnoreCase);
+
+        var disMatches = Regex.Matches(input, "\\bDIS[123]\\b", RegexOptions.IgnoreCase).Count;
+        var moduleCodeMatches = Regex.Matches(input, "\\b[A-Z]{4}\\d{4}\\b").Count;
+
+        return hasPasKeywords || (disMatches >= 3 && moduleCodeMatches >= 3);
     }
 
     private static bool TryParseGridLine(
