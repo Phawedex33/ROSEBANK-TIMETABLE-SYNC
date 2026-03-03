@@ -62,4 +62,5 @@ Thumbs.db
 # .NET
 **/bin/
 **/obj/
+backend/artifacts/
 backend/timetable-sync-token/

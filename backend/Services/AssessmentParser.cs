@@ -10,6 +10,10 @@ public sealed class AssessmentParser : IAssessmentParser
         "(?<code>[A-Z]{4}\\d{4})\\s+(?<name>.+?)\\s+(?<type>Practical\\s+Assignment\\s*\\d*|Practical\\s+Test\\s*\\d*|Theory\\s+Test\\s*\\d*|Final\\s+Exam|Assignment\\s*\\d*|Test\\s*\\d*|Exam|Project\\s*\\d*|Quiz\\s*\\d*|Presentation\\s*\\d*)\\s*(?<tail>.*?)\\s+(?<date>\\d{1,2}[-/](?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|\\d{1,2})[-/]\\d{2,4})\\s+(?<time>(?:[01]?\\d|2[0-3]):[0-5]\\d|23:59)",
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
 
+    private static readonly Regex PasLinePattern = new(
+        "^DIS\\d\\s+(?<code>[A-Z]{4}\\d{4})\\s+(?<name>.+?)\\s+(?<type>Practical\\s+Assignment\\s*\\d*|Practical\\s+Test\\s*\\d*|Theory\\s+Test\\s*\\d*|Final\\s+Exam|Assignment\\s*\\d*(?:\\s+Deferred)?|Project\\s*\\d*(?:\\s+Deferred)?|Test\\s*\\d*(?:\\s+Sitting\\s*[12])?|Part\\s*\\d*(?:\\s+Deferred)?|Task\\s*\\d*(?:\\s+Deferred)?|Exam|Quiz\\s*\\d*|Presentation\\s*\\d*)\\s+(?<delivery>Campus\\s+Sitting|Online\\s+Submission(?:\\s+Turnitin)?)\\s+(?<date>\\d{1,2}[-/](?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|\\d{1,2})[-/]\\d{2,4})\\s+(?<time>(?:[01]?\\d|2[0-3]):[0-5]\\d|23:59)$",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
     private static readonly Regex ModuleCodePattern = new(
         "\\b(?<code>[A-Z]{4}\\d{4})\\b",
         RegexOptions.Compiled);
@@ -32,15 +36,16 @@ public sealed class AssessmentParser : IAssessmentParser
 
     public AssessmentPreviewResponse Parse(string input)
     {
-        var normalized = Regex.Replace(input, "\\s+", " ").Trim();
+        var preprocessed = ExpandCompactPasText(input);
+        var normalized = Regex.Replace(preprocessed, "\\s+", " ").Trim();
         var response = new AssessmentPreviewResponse
         {
-            ExtractedText = input
+            ExtractedText = preprocessed
         };
         var dedupe = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        ParseRowMatches(normalized, response, dedupe);
-        ParseModuleBlocks(input, response, dedupe);
+        ParseRowMatches(preprocessed, normalized, response, dedupe);
+        ParseModuleBlocks(preprocessed, response, dedupe);
 
         if (response.Events.Count == 0)
         {
@@ -50,8 +55,57 @@ public sealed class AssessmentParser : IAssessmentParser
         return response;
     }
 
-    private static void ParseRowMatches(string normalizedInput, AssessmentPreviewResponse response, ISet<string> dedupe)
+    private static void ParseRowMatches(string preprocessedInput, string normalizedInput, AssessmentPreviewResponse response, ISet<string> dedupe)
     {
+        var lines = preprocessedInput.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (var rawLine in lines)
+        {
+            var line = NormalizeText(rawLine);
+            var lineMatch = PasLinePattern.Match(line);
+            if (!lineMatch.Success)
+            {
+                continue;
+            }
+
+            var code = lineMatch.Groups["code"].Value.Trim().ToUpperInvariant();
+            var name = NormalizeText(lineMatch.Groups["name"].Value);
+            var type = NormalizeText(lineMatch.Groups["type"].Value);
+            var dateRaw = lineMatch.Groups["date"].Value.Trim();
+            var timeRaw = lineMatch.Groups["time"].Value.Trim();
+            var deliveryText = lineMatch.Groups["delivery"].Value;
+
+            if (!TryParseDate(dateRaw, out var date))
+            {
+                response.Warnings.Add($"Skipped {code}: invalid date '{dateRaw}'.");
+                continue;
+            }
+
+            if (!TimeOnly.TryParse(timeRaw, CultureInfo.InvariantCulture, DateTimeStyles.None, out var time))
+            {
+                response.Warnings.Add($"Skipped {code}: invalid time '{timeRaw}'.");
+                continue;
+            }
+
+            int? sitting = null;
+            var sittingMatch = SittingPattern.Match(type);
+            if (sittingMatch.Success)
+            {
+                sitting = int.Parse(sittingMatch.Groups["sitting"].Value, CultureInfo.InvariantCulture);
+                type = Regex.Replace(type, "\\s+Sitting\\s*[12]", string.Empty, RegexOptions.IgnoreCase).Trim();
+            }
+
+            AddEventIfUnique(response, dedupe, new AssessmentEvent
+            {
+                ModuleCode = code,
+                ModuleName = name,
+                AssessmentType = type,
+                Sitting = sitting,
+                Date = date,
+                Time = time,
+                DeliveryMode = DetectDeliveryMode(deliveryText)
+            }, $"branch=pas_line_regex module={code}");
+        }
+
         var matches = RowPattern.Matches(normalizedInput);
         foreach (Match match in matches)
         {
@@ -267,5 +321,23 @@ public sealed class AssessmentParser : IAssessmentParser
     private static string NormalizeText(string value)
     {
         return Regex.Replace(value, "\\s+", " ").Trim();
+    }
+
+    private static string ExpandCompactPasText(string input)
+    {
+        var expanded = input;
+        expanded = Regex.Replace(expanded, "(?<=[a-z\\)])(?=[A-Z])", " ");
+        expanded = Regex.Replace(expanded, "(?<=\\d)(?=[A-Z])", " ");
+        expanded = Regex.Replace(expanded, "(?<=[0-9])(?=DIS\\d\\b)", "\n");
+        expanded = Regex.Replace(expanded, "(?<=[0-9])(?=[A-Z]{4}\\d{4}\\b)", " ");
+        expanded = Regex.Replace(expanded, "(?<=[A-Za-z])(?=\\d{1,2}-[A-Za-z]{3}-\\d{2,4})", " ");
+        expanded = Regex.Replace(expanded, "(?<=[A-Za-z])(?=\\d{2}:\\d{2})", " ");
+        expanded = Regex.Replace(expanded, "(?<date>\\d{1,2}-[A-Za-z]{3}-\\d{2,4})(?<time>\\d{2}:\\d{2})", "${date} ${time}");
+        expanded = Regex.Replace(expanded, "[ \\t\\r\\f\\v]+", " ");
+        expanded = expanded.Replace(" DIS1 ", "\nDIS1 ");
+        expanded = expanded.Replace(" DIS2 ", "\nDIS2 ");
+        expanded = expanded.Replace(" DIS3 ", "\nDIS3 ");
+        expanded = Regex.Replace(expanded, " *\\n *", "\n");
+        return expanded.Trim();
     }
 }

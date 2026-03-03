@@ -5,7 +5,7 @@
 ### Stack
 - Backend: ASP.NET Core Web API (C#)
 - Frontend: HTML/CSS/JavaScript
-- PDF text extraction: PdfPig
+- PDF text extraction: PdfPig (with stream-based fallback for difficult files)
 - OCR: Tesseract CLI (real OCR for PNG/JPG/JPEG)
 - Calendar integration: Google Calendar API
 
