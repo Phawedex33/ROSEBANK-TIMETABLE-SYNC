@@ -15,7 +15,10 @@ builder.Services.AddSwaggerGen();
 builder.Services.Configure<GoogleCalendarOptions>(builder.Configuration.GetSection("GoogleCalendar"));
 
 builder.Services.AddScoped<ITextExtractionService, TextExtractionService>();
+builder.Services.AddScoped<IPdfTextExtractor, PdfTextExtractor>();
 builder.Services.AddScoped<ITimetableParser, TimetableParser>();
+builder.Services.AddScoped<IAcademicParser, AcademicParser>();
+builder.Services.AddScoped<IAssessmentParser, AssessmentParser>();
 builder.Services.AddScoped<IAcademicScheduleBuilder, AcademicScheduleBuilder>();
 builder.Services.AddScoped<IGoogleCalendarService, GoogleCalendarService>();
 

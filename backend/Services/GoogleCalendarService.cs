@@ -48,7 +48,9 @@ public sealed class GoogleCalendarService : IGoogleCalendarService
 
             var recurringEvent = new Event
             {
-                Summary = item.Subject,
+                Summary = item.Subject.StartsWith("[CLASS] ", StringComparison.OrdinalIgnoreCase)
+                    ? item.Subject
+                    : $"[CLASS] {item.Subject}",
                 Start = new EventDateTime
                 {
                     DateTimeDateTimeOffset = start,
@@ -62,7 +64,8 @@ public sealed class GoogleCalendarService : IGoogleCalendarService
                 Recurrence = new List<string>
                 {
                     $"RRULE:FREQ=WEEKLY;UNTIL={request.SemesterEndDate.ToDateTime(TimeOnly.MaxValue):yyyyMMdd'T'HHmmss'Z'}"
-                }
+                },
+                ColorId = "9"
             };
 
             var created = await service.Events.Insert(recurringEvent, _options.CalendarId).ExecuteAsync(cancellationToken);
@@ -76,20 +79,59 @@ public sealed class GoogleCalendarService : IGoogleCalendarService
         return response;
     }
 
+    public async Task<SyncResponse> CreateAssessmentEventsAsync(AssessmentSyncRequest request, CancellationToken cancellationToken)
+    {
+        var mapped = request.Events.Select(item => new ExamEvent
+        {
+            ModuleCode = item.ModuleCode,
+            ModuleName = item.ModuleName,
+            AssessmentType = item.AssessmentType,
+            Sitting = item.Sitting,
+            Date = item.Date,
+            Time = item.Time,
+            DeliveryMode = item.DeliveryMode
+        }).ToList();
+
+        return await CreateExamEventsInternalAsync(
+            mapped,
+            request.TimeZone,
+            request.DurationMinutes,
+            "[ASSESSMENT]",
+            "11",
+            cancellationToken);
+    }
+
     public async Task<SyncResponse> CreateExamEventsAsync(ExamSyncRequest request, CancellationToken cancellationToken)
+    {
+        return await CreateExamEventsInternalAsync(
+            request.Events,
+            request.TimeZone,
+            request.DurationMinutes,
+            "[EXAM]",
+            "11",
+            cancellationToken);
+    }
+
+    private async Task<SyncResponse> CreateExamEventsInternalAsync(
+        IReadOnlyCollection<ExamEvent> events,
+        string timeZone,
+        int durationMinutes,
+        string tag,
+        string colorId,
+        CancellationToken cancellationToken)
     {
         var service = await CreateCalendarClientAsync(cancellationToken);
         var response = new SyncResponse();
-        var duration = request.DurationMinutes <= 0 ? 60 : request.DurationMinutes;
+        var duration = durationMinutes <= 0 ? 60 : durationMinutes;
 
-        foreach (var item in request.Events)
+        foreach (var item in events)
         {
             var start = item.Date.ToDateTime(item.Time, DateTimeKind.Unspecified);
             var end = start.AddMinutes(duration);
-            var summary = $"[EXAM] {item.ModuleCode} - {item.AssessmentType}";
+            var summary = $"{tag} {item.ModuleCode} - {item.AssessmentType}";
             if (!string.IsNullOrWhiteSpace(item.ModuleName))
             {
-                summary = $"[EXAM] {item.ModuleCode} - {item.ModuleName} ({item.AssessmentType})";
+                summary = $"{tag} {item.ModuleCode} - {item.ModuleName} ({item.AssessmentType})";
             }
 
             var examEvent = new Event
@@ -99,13 +141,14 @@ public sealed class GoogleCalendarService : IGoogleCalendarService
                 Start = new EventDateTime
                 {
                     DateTime = start,
-                    TimeZone = request.TimeZone
+                    TimeZone = timeZone
                 },
                 End = new EventDateTime
                 {
                     DateTime = end,
-                    TimeZone = request.TimeZone
+                    TimeZone = timeZone
                 },
+                ColorId = colorId,
                 Reminders = new Event.RemindersData
                 {
                     UseDefault = false,
@@ -164,6 +207,11 @@ public sealed class GoogleCalendarService : IGoogleCalendarService
         if (item.Sitting.HasValue)
         {
             details.Add($"Sitting: {item.Sitting.Value}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(item.DeliveryMode))
+        {
+            details.Add($"Mode: {item.DeliveryMode}");
         }
 
         return string.Join(Environment.NewLine, details);

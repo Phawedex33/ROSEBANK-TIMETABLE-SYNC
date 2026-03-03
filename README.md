@@ -18,9 +18,8 @@ Each line should follow:
 `Monday 08:00-09:00 Mathematics`
 
 ### Modes
-- `Academic`: parses weekly class lines and syncs recurring events.
-- `Exam`: parses one-time assessment lines and syncs one-time events.
-- `Academic Assisted`: use `group + day + period` JSON rows and convert with fixed period times.
+- `Academic`: Rosebank class timetable flow (year + group + recurring weekly sync).
+- `Assessment`: Rosebank PAS flow (one-time assessment events with reminders).
 
 ### Backend Setup
 1. Install .NET 8 SDK.
@@ -41,6 +40,12 @@ Open:
 - `https://localhost:7068`
 
 ### Endpoints
+- `POST /api/academic/preview` (`multipart/form-data`, fields: `file`, `year`, `group`)
+- `POST /api/academic/sync` (`application/json`, body includes `year`, `group`, `events`, `semesterEndDate`, `timeZone`)
+- `POST /api/assessment/preview` (`multipart/form-data`, provide `file` or `text`)
+- `POST /api/assessment/sync` (`application/json`, one-time assessment events)
+
+### Legacy Endpoints (kept during transition)
 - `POST /api/upload/preview` (`multipart/form-data`, fields: `file`, `mode`)
 - `POST /api/upload/preview-text` (`application/json`, body: `{ "mode": "Academic|Exam", "text": "..." }`)
 - `POST /api/upload/build-academic` (`application/json`, body with `group` and draft `rows`)
@@ -52,5 +57,6 @@ Open:
 - Image OCR now uses Tesseract (`tesseract <image> stdout -l eng --oem 1 --psm 6`).
 - Scanned PDFs without selectable text are detected and returned as actionable error (convert to image first, or add PDF-to-image OCR pipeline).
 - Text fallback is available via `preview-text` for messy PDFs.
-- Exam sync creates one-time events with popup reminders (24h and 2h).
+- Assessment sync creates one-time events with popup reminders (24h and 2h) and red color.
+- Academic recurring events are created with `[CLASS]` prefix and blue color.
 - OAuth token cache is stored in `backend/timetable-sync-token` after first auth.

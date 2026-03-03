@@ -1,6 +1,6 @@
 namespace TimetableSync.Api.Models;
 
-public sealed class ExamEvent
+public sealed class AssessmentEvent
 {
     public string ModuleCode { get; init; } = string.Empty;
     public string ModuleName { get; init; } = string.Empty;
