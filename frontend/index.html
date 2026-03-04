@@ -159,6 +159,36 @@
       <h2>Status</h2>
       <pre id="statusOutput">Ready.</pre>
     </section>
+
+    <section class="card hidden" id="referenceAdminCard">
+      <div class="row">
+        <h2>Reference Admin (Local + Key)</h2>
+      </div>
+      <p class="hint">Use this to maintain verified lecturer/venue mappings per term.</p>
+      <label for="referenceAdminKey">Admin Key</label>
+      <input id="referenceAdminKey" type="password" placeholder="Enter X-Admin-Key" />
+      <div class="row-actions">
+        <button id="loadReferenceBtn" type="button">Load Reference</button>
+        <button id="addReferenceRowBtn" type="button">Add Mapping</button>
+        <button id="saveReferenceBtn" type="button">Save Reference</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Verified</th>
+              <th>Year</th>
+              <th>Group</th>
+              <th>Module</th>
+              <th>Lecturer</th>
+              <th>Venue</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="referenceAdminBody"></tbody>
+        </table>
+      </div>
+    </section>
   </main>
 
   <script src="app.js"></script>

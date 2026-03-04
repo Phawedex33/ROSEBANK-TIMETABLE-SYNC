@@ -1,6 +1,7 @@
 const academicApi = "/api/academic";
 const assessmentApi = "/api/assessment";
 const calendarApi = "/api/calendar";
+const referenceAdminApi = "/api/admin/reference";
 const appStateKey = "rosebank_sync_ui_state_v1";
 
 const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -22,6 +23,7 @@ let availableModules = [];
 let selectedModules = new Set();
 let isGoogleConnected = false;
 let syncBusy = false;
+let referenceRows = [];
 
 const modeInput = document.getElementById("mode");
 const fileInput = document.getElementById("fileInput");
@@ -50,6 +52,12 @@ const modulesWrap = document.getElementById("modulesWrap");
 const textOutput = document.getElementById("textOutput");
 const diagnosticsOutput = document.getElementById("diagnosticsOutput");
 const statusOutput = document.getElementById("statusOutput");
+const referenceAdminCard = document.getElementById("referenceAdminCard");
+const referenceAdminKey = document.getElementById("referenceAdminKey");
+const loadReferenceBtn = document.getElementById("loadReferenceBtn");
+const addReferenceRowBtn = document.getElementById("addReferenceRowBtn");
+const saveReferenceBtn = document.getElementById("saveReferenceBtn");
+const referenceAdminBody = document.getElementById("referenceAdminBody");
 
 initializeUi();
 
@@ -85,8 +93,15 @@ function initializeUi() {
     refreshModulePicker();
     renderAssessmentTable();
   });
+  loadReferenceBtn.addEventListener("click", onLoadReferenceRows);
+  addReferenceRowBtn.addEventListener("click", () => {
+    referenceRows.push(createReferenceRow());
+    renderReferenceRows();
+  });
+  saveReferenceBtn.addEventListener("click", onSaveReferenceRows);
 
   restoreUiState();
+  initializeReferenceAdmin();
   applyMode();
   renderAcademicTable();
   renderAssessmentTable();
@@ -108,6 +123,25 @@ function applyMode() {
   refreshModulePicker();
   persistUiState();
   updateSyncAvailability();
+}
+
+async function initializeReferenceAdmin() {
+  try {
+    const res = await fetch(`${referenceAdminApi}/config`, { method: "GET" });
+    if (!res.ok) {
+      return;
+    }
+
+    const config = await res.json();
+    if (!config.enabled) {
+      return;
+    }
+
+    referenceAdminCard.classList.remove("hidden");
+    statusOutput.textContent = "Reference admin enabled. Use admin key to load/save mappings.";
+  } catch {
+    // Silent fallback: admin UI stays hidden if config endpoint is unavailable.
+  }
 }
 
 async function onPreview() {
@@ -421,6 +455,131 @@ async function syncAssessment() {
   const data = await res.json();
   statusOutput.textContent = `Assessment sync complete: ${data.created} event(s) created.`;
   persistUiState();
+}
+
+async function onLoadReferenceRows() {
+  const adminKey = referenceAdminKey.value.trim();
+  if (!adminKey) {
+    statusOutput.textContent = "Enter admin key first.";
+    return;
+  }
+
+  setBusy(loadReferenceBtn, true, "Loading...");
+  try {
+    const res = await fetch(referenceAdminApi, {
+      method: "GET",
+      headers: {
+        "X-Admin-Key": adminKey
+      }
+    });
+
+    if (!res.ok) {
+      throw new Error(await getErrorText(res, "Failed to load reference dataset."));
+    }
+
+    const data = await res.json();
+    referenceRows = (data.rows || []).map((row) => createReferenceRow(row));
+    renderReferenceRows();
+    statusOutput.textContent = `Loaded ${referenceRows.length} reference mapping row(s).`;
+  } catch (err) {
+    statusOutput.textContent = err.message;
+  } finally {
+    setBusy(loadReferenceBtn, false, "Load Reference");
+  }
+}
+
+async function onSaveReferenceRows() {
+  const adminKey = referenceAdminKey.value.trim();
+  if (!adminKey) {
+    statusOutput.textContent = "Enter admin key first.";
+    return;
+  }
+
+  setBusy(saveReferenceBtn, true, "Saving...");
+  try {
+    const payload = {
+      rows: referenceRows.map((row) => ({
+        verified: Boolean(row.verified),
+        year: Number(row.year) || 0,
+        group: String(row.group || "").trim(),
+        moduleCode: String(row.moduleCode || "").trim().toUpperCase(),
+        lecturer: String(row.lecturer || "").trim() || "TBA",
+        venue: String(row.venue || "").trim() || "TBA"
+      }))
+    };
+
+    const res = await fetch(referenceAdminApi, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Admin-Key": adminKey
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) {
+      throw new Error(await getErrorText(res, "Failed to save reference dataset."));
+    }
+
+    statusOutput.textContent = "Reference mappings saved.";
+  } catch (err) {
+    statusOutput.textContent = err.message;
+  } finally {
+    setBusy(saveReferenceBtn, false, "Save Reference");
+  }
+}
+
+function createReferenceRow(row = {}) {
+  return {
+    verified: Boolean(row.verified),
+    year: Number(row.year) || 3,
+    group: String(row.group || "GR1").trim().toUpperCase(),
+    moduleCode: String(row.moduleCode || "").trim().toUpperCase(),
+    lecturer: String(row.lecturer || "TBA").trim(),
+    venue: String(row.venue || "TBA").trim().toUpperCase()
+  };
+}
+
+function renderReferenceRows() {
+  referenceAdminBody.innerHTML = "";
+  for (let i = 0; i < referenceRows.length; i += 1) {
+    const row = referenceRows[i];
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><input type="checkbox" data-ref-field="verified" data-ref-index="${i}" ${row.verified ? "checked" : ""} /></td>
+      <td><input type="number" min="1" max="3" data-ref-field="year" data-ref-index="${i}" value="${escapeAttr(row.year)}" /></td>
+      <td><input type="text" data-ref-field="group" data-ref-index="${i}" value="${escapeAttr(row.group)}" /></td>
+      <td><input type="text" data-ref-field="moduleCode" data-ref-index="${i}" value="${escapeAttr(row.moduleCode)}" /></td>
+      <td><input type="text" data-ref-field="lecturer" data-ref-index="${i}" value="${escapeAttr(row.lecturer)}" /></td>
+      <td><input type="text" data-ref-field="venue" data-ref-index="${i}" value="${escapeAttr(row.venue)}" /></td>
+      <td class="td-actions"><button type="button" data-delete="reference" data-index="${i}">Delete</button></td>
+    `;
+    referenceAdminBody.appendChild(tr);
+  }
+
+  referenceAdminBody.querySelectorAll("input[data-ref-field]").forEach((el) => {
+    el.addEventListener("input", onReferenceInput);
+    el.addEventListener("change", onReferenceInput);
+  });
+
+  referenceAdminBody.querySelectorAll("button[data-delete='reference']").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const index = Number(btn.getAttribute("data-index"));
+      referenceRows.splice(index, 1);
+      renderReferenceRows();
+    });
+  });
+}
+
+function onReferenceInput(event) {
+  const index = Number(event.target.getAttribute("data-ref-index"));
+  const field = event.target.getAttribute("data-ref-field");
+  if (field === "verified") {
+    referenceRows[index][field] = event.target.checked;
+    return;
+  }
+
+  referenceRows[index][field] = event.target.value;
 }
 
 function renderAcademicTable() {

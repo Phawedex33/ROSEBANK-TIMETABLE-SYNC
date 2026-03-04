@@ -17,6 +17,7 @@ builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession();
 
 builder.Services.Configure<GoogleCalendarOptions>(builder.Configuration.GetSection("GoogleCalendar"));
+builder.Services.Configure<ReferenceAdminOptions>(builder.Configuration.GetSection("ReferenceAdmin"));
 
 builder.Services.AddScoped<ITextExtractionService, TextExtractionService>();
 builder.Services.AddScoped<IPdfTextExtractor, PdfTextExtractor>();

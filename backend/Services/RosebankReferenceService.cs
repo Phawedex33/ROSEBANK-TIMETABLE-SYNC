@@ -4,11 +4,15 @@ namespace TimetableSync.Api.Services;
 
 public sealed class RosebankReferenceService : IRosebankReferenceService
 {
-    private readonly Lazy<Dictionary<string, ReferenceRow>> _rows;
+    private readonly string _datasetPath;
+    private readonly object _sync = new();
+    private List<RosebankReferenceRow> _allRows;
+    private Dictionary<string, ReferenceRow> _verifiedRows;
 
     public RosebankReferenceService(IHostEnvironment environment)
     {
-        _rows = new Lazy<Dictionary<string, ReferenceRow>>(() => LoadReference(environment.ContentRootPath));
+        _datasetPath = Path.Combine(environment.ContentRootPath, "Data", "rosebank-reference.json");
+        (_allRows, _verifiedRows) = LoadReference(_datasetPath);
     }
 
     public bool TryGetClassDetails(int year, string group, string moduleCode, out string lecturer, out string venue)
@@ -23,7 +27,7 @@ public sealed class RosebankReferenceService : IRosebankReferenceService
         }
 
         var key = BuildKey(year, normalizedGroup, normalizedCode);
-        if (!_rows.Value.TryGetValue(key, out var row))
+        if (!_verifiedRows.TryGetValue(key, out var row))
         {
             return false;
         }
@@ -33,29 +37,124 @@ public sealed class RosebankReferenceService : IRosebankReferenceService
         return true;
     }
 
-    private static Dictionary<string, ReferenceRow> LoadReference(string contentRoot)
+    public IReadOnlyList<RosebankReferenceRow> GetAllRows()
     {
-        var path = Path.Combine(contentRoot, "Data", "rosebank-reference.json");
+        lock (_sync)
+        {
+            return _allRows
+                .Select(x => new RosebankReferenceRow
+                {
+                    Verified = x.Verified,
+                    Year = x.Year,
+                    Group = x.Group,
+                    ModuleCode = x.ModuleCode,
+                    Lecturer = x.Lecturer,
+                    Venue = x.Venue
+                })
+                .ToList();
+        }
+    }
+
+    public async Task SaveRowsAsync(IEnumerable<RosebankReferenceRow> rows, CancellationToken cancellationToken)
+    {
+        var normalizedRows = (rows ?? Array.Empty<RosebankReferenceRow>())
+            .Select(NormalizeRow)
+            .Where(x => x.Year > 0 && !string.IsNullOrWhiteSpace(x.Group) && !string.IsNullOrWhiteSpace(x.ModuleCode))
+            .ToList();
+
+        var dataset = new ReferenceDataset
+        {
+            Rows = normalizedRows.Select(x => new ReferenceRowInput
+            {
+                Verified = x.Verified,
+                Year = x.Year,
+                Group = x.Group,
+                ModuleCode = x.ModuleCode,
+                Lecturer = x.Lecturer,
+                Venue = x.Venue
+            }).ToList()
+        };
+
+        var tempPath = $"{_datasetPath}.tmp";
+        await using (var stream = File.Create(tempPath))
+        {
+            await JsonSerializer.SerializeAsync(stream, dataset, new JsonSerializerOptions
+            {
+                WriteIndented = true
+            }, cancellationToken);
+        }
+
+        File.Move(tempPath, _datasetPath, overwrite: true);
+        var (allRows, verifiedRows) = LoadReference(_datasetPath);
+
+        lock (_sync)
+        {
+            _allRows = allRows;
+            _verifiedRows = verifiedRows;
+        }
+    }
+
+    private static (List<RosebankReferenceRow> AllRows, Dictionary<string, ReferenceRow> VerifiedRows) LoadReference(string path)
+    {
         if (!File.Exists(path))
         {
-            return new Dictionary<string, ReferenceRow>(StringComparer.OrdinalIgnoreCase);
+            return (new List<RosebankReferenceRow>(), new Dictionary<string, ReferenceRow>(StringComparer.OrdinalIgnoreCase));
         }
 
         using var stream = File.OpenRead(path);
         var dataset = JsonSerializer.Deserialize<ReferenceDataset>(stream) ?? new ReferenceDataset();
-        var rows = new Dictionary<string, ReferenceRow>(StringComparer.OrdinalIgnoreCase);
-        foreach (var item in dataset.Rows.Where(x => x.Verified))
+        var allRows = new List<RosebankReferenceRow>();
+        var verifiedRows = new Dictionary<string, ReferenceRow>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var item in dataset.Rows.Select(NormalizeRow))
         {
             if (item.Year <= 0 || string.IsNullOrWhiteSpace(item.Group) || string.IsNullOrWhiteSpace(item.ModuleCode))
             {
                 continue;
             }
 
+            allRows.Add(item);
+            if (!item.Verified)
+            {
+                continue;
+            }
+
             var key = BuildKey(item.Year, NormalizeGroup(item.Group), item.ModuleCode.Trim().ToUpperInvariant());
-            rows[key] = new ReferenceRow(item.Lecturer?.Trim() ?? "TBA", item.Venue?.Trim() ?? "TBA");
+            verifiedRows[key] = new ReferenceRow(item.Lecturer, item.Venue);
         }
 
-        return rows;
+        return (allRows, verifiedRows);
+    }
+
+    private static RosebankReferenceRow NormalizeRow(ReferenceRowInput row)
+    {
+        return NormalizeRow(new RosebankReferenceRow
+        {
+            Verified = row.Verified,
+            Year = row.Year,
+            Group = row.Group,
+            ModuleCode = row.ModuleCode,
+            Lecturer = row.Lecturer,
+            Venue = row.Venue
+        });
+    }
+
+    private static RosebankReferenceRow NormalizeRow(RosebankReferenceRow row)
+    {
+        var group = NormalizeGroup(row.Group);
+        var moduleCode = (row.ModuleCode ?? string.Empty).Trim().ToUpperInvariant();
+        var lecturer = string.IsNullOrWhiteSpace(row.Lecturer) ? "TBA" : row.Lecturer.Trim();
+        var venue = string.IsNullOrWhiteSpace(row.Venue) ? "TBA" : row.Venue.Trim().ToUpperInvariant();
+
+        return new RosebankReferenceRow
+        {
+            Verified = row.Verified,
+            Year = row.Year,
+            Group = group,
+            ModuleCode = moduleCode,
+            Lecturer = lecturer,
+            Venue = venue
+        };
     }
 
     private static string NormalizeGroup(string? group)
