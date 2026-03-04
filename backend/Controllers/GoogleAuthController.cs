@@ -62,6 +62,17 @@ public sealed class GoogleAuthController : ControllerBase
         });
     }
 
+    [HttpPost("disconnect")]
+    public IActionResult Disconnect()
+    {
+        HttpContext.Session.Remove("google_access_token");
+        HttpContext.Session.Remove("google_refresh_token");
+        HttpContext.Session.Remove("google_token_expiry_utc");
+        HttpContext.Session.Remove("google_oauth_state");
+
+        return Ok(new { disconnected = true });
+    }
+
     [HttpGet("callback")]
     public async Task<IActionResult> Callback([FromQuery] string? code, [FromQuery] string? state, [FromQuery] string? error, CancellationToken cancellationToken)
     {

@@ -26,6 +26,7 @@ const assessmentBody = document.getElementById("assessmentBody");
 const previewBtn = document.getElementById("previewBtn");
 const syncBtn = document.getElementById("syncBtn");
 const connectGoogleBtn = document.getElementById("connectGoogleBtn");
+const disconnectGoogleBtn = document.getElementById("disconnectGoogleBtn");
 const authStatus = document.getElementById("authStatus");
 const addAcademicRowBtn = document.getElementById("addAcademicRowBtn");
 const addAssessmentRowBtn = document.getElementById("addAssessmentRowBtn");
@@ -44,6 +45,7 @@ function initializeUi() {
   connectGoogleBtn.addEventListener("click", () => {
     window.location.href = "/oauth/google/start";
   });
+  disconnectGoogleBtn.addEventListener("click", disconnectGoogle);
   selectAllModulesBtn.addEventListener("click", () => {
     selectedModules = new Set(availableModules);
     renderModules();
@@ -219,6 +221,7 @@ async function updateGoogleAuthStatus() {
       isGoogleConnected = true;
       syncBtn.disabled = false;
       authStatus.textContent = "Connected to Google Calendar.";
+      disconnectGoogleBtn.disabled = false;
       if (new URLSearchParams(window.location.search).get("google") === "connected") {
         statusOutput.textContent = "Google connection successful. You can sync now.";
       }
@@ -227,11 +230,35 @@ async function updateGoogleAuthStatus() {
 
     isGoogleConnected = false;
     syncBtn.disabled = true;
+    disconnectGoogleBtn.disabled = true;
     authStatus.textContent = "Not connected. Click 'Connect Google Calendar' before syncing.";
   } catch {
     isGoogleConnected = false;
     syncBtn.disabled = true;
+    disconnectGoogleBtn.disabled = true;
     authStatus.textContent = "Could not verify Google connection.";
+  }
+}
+
+async function disconnectGoogle() {
+  setBusy(disconnectGoogleBtn, true, "Disconnecting...");
+  try {
+    const res = await fetch("/oauth/google/disconnect", {
+      method: "POST"
+    });
+    if (!res.ok) {
+      throw new Error("Failed to disconnect Google account.");
+    }
+
+    isGoogleConnected = false;
+    syncBtn.disabled = true;
+    authStatus.textContent = "Disconnected from Google Calendar.";
+    statusOutput.textContent = "Google connection removed.";
+  } catch (err) {
+    statusOutput.textContent = err.message;
+  } finally {
+    setBusy(disconnectGoogleBtn, false, "Disconnect");
+    await updateGoogleAuthStatus();
   }
 }
 

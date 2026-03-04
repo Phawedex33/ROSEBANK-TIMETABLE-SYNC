@@ -119,6 +119,11 @@ pre {
   padding: 0.5rem 0.8rem;
 }
 
+.row-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
 .chips {
   display: flex;
   flex-wrap: wrap;
