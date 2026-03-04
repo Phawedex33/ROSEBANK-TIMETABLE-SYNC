@@ -7,4 +7,5 @@ public interface IGoogleCalendarService
     Task<SyncResponse> CreateWeeklyEventsAsync(SyncRequest request, CancellationToken cancellationToken);
     Task<SyncResponse> CreateAssessmentEventsAsync(AssessmentSyncRequest request, CancellationToken cancellationToken);
     Task<SyncResponse> CreateExamEventsAsync(ExamSyncRequest request, CancellationToken cancellationToken);
+    Task<CalendarDeleteResponse> DeleteManagedEventsAsync(CalendarDeleteRequest request, CancellationToken cancellationToken);
 }

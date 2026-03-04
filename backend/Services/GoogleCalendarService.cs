@@ -57,6 +57,7 @@ public sealed class GoogleCalendarService : IGoogleCalendarService
                 Summary = item.Subject.StartsWith("[CLASS] ", StringComparison.OrdinalIgnoreCase)
                     ? item.Subject
                     : $"[CLASS] {item.Subject}",
+                Description = BuildClassDescription(item),
                 Start = new EventDateTime
                 {
                     DateTimeDateTimeOffset = start,
@@ -67,6 +68,7 @@ public sealed class GoogleCalendarService : IGoogleCalendarService
                     DateTimeDateTimeOffset = end,
                     TimeZone = request.TimeZone
                 },
+                Location = string.IsNullOrWhiteSpace(item.Venue) ? null : item.Venue,
                 Recurrence = new List<string>
                 {
                     $"RRULE:FREQ=WEEKLY;UNTIL={recurrenceEndDate.ToDateTime(TimeOnly.MaxValue):yyyyMMdd'T'HHmmss'Z'}"
@@ -116,6 +118,48 @@ public sealed class GoogleCalendarService : IGoogleCalendarService
             "[EXAM]",
             "11",
             cancellationToken);
+    }
+
+    public async Task<CalendarDeleteResponse> DeleteManagedEventsAsync(CalendarDeleteRequest request, CancellationToken cancellationToken)
+    {
+        var service = await CreateCalendarClientAsync(cancellationToken);
+        var response = new CalendarDeleteResponse();
+        var (fromUtc, toUtc) = ResolveDeleteWindow(request.FromDate, request.ToDate);
+        var prefixes = ResolveManagedPrefixes(request.Mode);
+
+        var listRequest = service.Events.List(_options.CalendarId);
+        listRequest.ShowDeleted = false;
+        listRequest.SingleEvents = false;
+        listRequest.TimeMinDateTimeOffset = fromUtc;
+        listRequest.TimeMaxDateTimeOffset = toUtc;
+
+        string? pageToken = null;
+        do
+        {
+            listRequest.PageToken = pageToken;
+            var events = await listRequest.ExecuteAsync(cancellationToken);
+            foreach (var ev in events.Items ?? Enumerable.Empty<Event>())
+            {
+                if (string.IsNullOrWhiteSpace(ev.Id))
+                {
+                    continue;
+                }
+
+                var summary = ev.Summary ?? string.Empty;
+                if (!prefixes.Any(prefix => summary.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+                {
+                    continue;
+                }
+
+                await service.Events.Delete(_options.CalendarId, ev.Id).ExecuteAsync(cancellationToken);
+                response.EventIds.Add(ev.Id);
+            }
+
+            pageToken = events.NextPageToken;
+        } while (!string.IsNullOrWhiteSpace(pageToken));
+
+        response.Deleted = response.EventIds.Count;
+        return response;
     }
 
     private async Task<SyncResponse> CreateExamEventsInternalAsync(
@@ -278,6 +322,52 @@ public sealed class GoogleCalendarService : IGoogleCalendarService
         }
 
         return string.Join(Environment.NewLine, details);
+    }
+
+    private static string BuildClassDescription(ClassEvent item)
+    {
+        var lines = new List<string>
+        {
+            $"Subject: {item.Subject}"
+        };
+
+        if (!string.IsNullOrWhiteSpace(item.Lecturer))
+        {
+            lines.Add($"Lecturer: {item.Lecturer}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(item.Venue))
+        {
+            lines.Add($"Venue: {item.Venue}");
+        }
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static (DateTimeOffset FromUtc, DateTimeOffset ToUtc) ResolveDeleteWindow(DateOnly? fromDate, DateOnly? toDate)
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var from = fromDate ?? today.AddDays(-180);
+        var to = toDate ?? today.AddDays(365);
+        var fromUtc = new DateTimeOffset(from.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+        var toUtc = new DateTimeOffset(to.ToDateTime(TimeOnly.MaxValue), TimeSpan.Zero);
+        return (fromUtc, toUtc);
+    }
+
+    private static IReadOnlyList<string> ResolveManagedPrefixes(string mode)
+    {
+        var normalized = (mode ?? string.Empty).Trim().ToLowerInvariant();
+        if (normalized is "academic" or "class")
+        {
+            return new[] { "[CLASS]" };
+        }
+
+        if (normalized is "assessment" or "exam")
+        {
+            return new[] { "[ASSESSMENT]", "[EXAM]" };
+        }
+
+        return new[] { "[CLASS]", "[ASSESSMENT]", "[EXAM]" };
     }
 
     private static DateOnly GetNextDateForDay(DayOfWeek target, DateOnly from)

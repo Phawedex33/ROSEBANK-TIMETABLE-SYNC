@@ -124,6 +124,15 @@ pre {
   gap: 0.5rem;
 }
 
+.row-actions button {
+  width: auto;
+  margin: 0;
+}
+
+.danger {
+  background: #b91c1c;
+}
+
 .chips {
   display: flex;
   flex-wrap: wrap;

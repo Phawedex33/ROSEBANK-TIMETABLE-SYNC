@@ -7,6 +7,7 @@ public sealed class AcademicParser : IAcademicParser
 {
     private static readonly Regex ModuleCodePattern = new("[A-Z]{4}\\d{4}", RegexOptions.Compiled);
     private static readonly Regex LooseModulePattern = new("[A-Z]{4}\\d{2,4}", RegexOptions.Compiled);
+    private static readonly Regex CodeWithDetailsPattern = new("(?<code>[A-Z]{4}\\d{4})(?<detail>.*?)(?<venue>PH\\s*\\d-\\d{2})", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex GroupMarkerPattern = new("3rd\\s*Year\\s*:\\s*GR(?<group>\\d+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private readonly ITimetableParser _parser;
@@ -30,6 +31,10 @@ public sealed class AcademicParser : IAcademicParser
                 parsed.Diagnostics.Add($"branch=rosebank_assisted_fallback rows={fallback.Count}");
                 parsed.Warnings.Clear();
                 parsed.Warnings.Add("Used assisted Rosebank fallback rows from detected module codes. Confirm day/time rows before syncing.");
+                if (fallback.Any(x => string.IsNullOrWhiteSpace(x.Lecturer) || string.IsNullOrWhiteSpace(x.Venue)))
+                {
+                    parsed.Warnings.Add("Some lecturer/venue details could not be detected from the PDF. Fill in Lecturer and Venue columns before syncing.");
+                }
             }
             else
             {
@@ -55,6 +60,7 @@ public sealed class AcademicParser : IAcademicParser
             : input;
 
         var codes = DetectModuleCodes(chunk, year).ToList();
+        var detailsByCode = ExtractDetailsByCode(chunk);
 
         if (codes.Count == 0)
         {
@@ -87,11 +93,49 @@ public sealed class AcademicParser : IAcademicParser
                 Day = slot.Day,
                 StartTime = slot.Start,
                 EndTime = slot.End,
-                Subject = codes[i]
+                Subject = codes[i],
+                Lecturer = detailsByCode.TryGetValue(codes[i], out var details) ? details.Lecturer : string.Empty,
+                Venue = detailsByCode.TryGetValue(codes[i], out details) ? details.Venue : string.Empty
             });
         }
 
         return rows;
+    }
+
+    private static Dictionary<string, (string Lecturer, string Venue)> ExtractDetailsByCode(string chunk)
+    {
+        var map = new Dictionary<string, (string Lecturer, string Venue)>(StringComparer.OrdinalIgnoreCase);
+        var matches = CodeWithDetailsPattern.Matches(chunk);
+        foreach (Match match in matches)
+        {
+            var code = match.Groups["code"].Value.ToUpperInvariant();
+            var venue = NormalizeVenue(match.Groups["venue"].Value);
+            var lecturer = NormalizeLecturer(match.Groups["detail"].Value);
+
+            if (!map.ContainsKey(code))
+            {
+                map[code] = (lecturer, venue);
+            }
+        }
+
+        return map;
+    }
+
+    private static string NormalizeVenue(string raw)
+    {
+        return Regex.Replace(raw ?? string.Empty, "\\s+", " ").Trim().ToUpperInvariant();
+    }
+
+    private static string NormalizeLecturer(string raw)
+    {
+        var cleaned = Regex.Replace(raw ?? string.Empty, "[^A-Za-z\\s]", " ");
+        cleaned = Regex.Replace(cleaned, "\\s+", " ").Trim();
+        if (cleaned.Length > 28)
+        {
+            cleaned = cleaned[..28].Trim();
+        }
+
+        return cleaned;
     }
 
     private static IEnumerable<string> DetectModuleCodes(string chunk, int year)

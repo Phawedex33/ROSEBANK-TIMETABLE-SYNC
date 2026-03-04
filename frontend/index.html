@@ -92,7 +92,10 @@
     <section class="card">
       <label for="timeZone">Time Zone</label>
       <input id="timeZone" type="text" value="Africa/Johannesburg" />
-      <button id="syncBtn" type="button" disabled>Sync Edited Events</button>
+      <div class="row-actions">
+        <button id="syncBtn" type="button" disabled>Sync Edited Events</button>
+        <button id="deleteSyncedBtn" type="button" class="danger" disabled>Delete Synced Events</button>
+      </div>
     </section>
 
     <section class="card" id="academicTableWrap">
@@ -108,6 +111,8 @@
               <th>Period</th>
               <th>Time</th>
               <th>Subject</th>
+              <th>Lecturer</th>
+              <th>Venue</th>
               <th></th>
             </tr>
           </thead>

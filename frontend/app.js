@@ -1,5 +1,6 @@
 const academicApi = "/api/academic";
 const assessmentApi = "/api/assessment";
+const calendarApi = "/api/calendar";
 const appStateKey = "rosebank_sync_ui_state_v1";
 
 const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -38,6 +39,7 @@ const academicBody = document.getElementById("academicBody");
 const assessmentBody = document.getElementById("assessmentBody");
 const previewBtn = document.getElementById("previewBtn");
 const syncBtn = document.getElementById("syncBtn");
+const deleteSyncedBtn = document.getElementById("deleteSyncedBtn");
 const connectGoogleBtn = document.getElementById("connectGoogleBtn");
 const disconnectGoogleBtn = document.getElementById("disconnectGoogleBtn");
 const authStatus = document.getElementById("authStatus");
@@ -55,6 +57,7 @@ function initializeUi() {
   modeInput.addEventListener("change", applyMode);
   previewBtn.addEventListener("click", onPreview);
   syncBtn.addEventListener("click", onSync);
+  deleteSyncedBtn.addEventListener("click", onDeleteSynced);
   connectGoogleBtn.addEventListener("click", () => {
     persistUiState();
     window.location.href = "/oauth/google/start";
@@ -150,7 +153,9 @@ async function previewAcademic() {
     createAcademicRow(
       eventItem.day || "Monday",
       resolvePeriodFromStartTime(normalizeTime(eventItem.startTime)),
-      eventItem.subject || ""
+      eventItem.subject || "",
+      eventItem.lecturer || "",
+      eventItem.venue || ""
     ));
 
   textOutput.textContent = data.extractedText || "No extracted text.";
@@ -233,6 +238,44 @@ async function onSync() {
   }
 }
 
+async function onDeleteSynced() {
+  if (!isGoogleConnected) {
+    statusOutput.textContent = "Connect Google Calendar first.";
+    return;
+  }
+
+  const confirmed = window.confirm("Delete synced events from your Google Calendar for the selected mode?");
+  if (!confirmed) {
+    return;
+  }
+
+  setBusy(deleteSyncedBtn, true, "Deleting...");
+  try {
+    const mode = modeInput.value === "academic" ? "Academic" : "Assessment";
+    const res = await fetch(`${calendarApi}/delete-synced`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        mode,
+        timeZone: timeZoneInput.value || "Africa/Johannesburg"
+      })
+    });
+
+    if (!res.ok) {
+      throw new Error(await getErrorText(res, "Delete synced events failed."));
+    }
+
+    const data = await res.json();
+    statusOutput.textContent = `Deleted ${data.deleted} synced event(s) from Google Calendar.`;
+  } catch (err) {
+    statusOutput.textContent = err.message;
+  } finally {
+    setBusy(deleteSyncedBtn, false, "Delete Synced Events");
+  }
+}
+
 async function updateGoogleAuthStatus() {
   try {
     const res = await fetch("/oauth/google/status", { method: "GET" });
@@ -245,6 +288,7 @@ async function updateGoogleAuthStatus() {
       isGoogleConnected = true;
       authStatus.textContent = "Connected to Google Calendar.";
       disconnectGoogleBtn.disabled = false;
+      deleteSyncedBtn.disabled = false;
       if (new URLSearchParams(window.location.search).get("google") === "connected") {
         statusOutput.textContent = "Google connection successful. You can sync now.";
         persistUiState();
@@ -254,10 +298,12 @@ async function updateGoogleAuthStatus() {
 
     isGoogleConnected = false;
     disconnectGoogleBtn.disabled = true;
+    deleteSyncedBtn.disabled = true;
     authStatus.textContent = "Not connected. Click 'Connect Google Calendar' before syncing.";
   } catch {
     isGoogleConnected = false;
     disconnectGoogleBtn.disabled = true;
+    deleteSyncedBtn.disabled = true;
     authStatus.textContent = "Could not verify Google connection.";
   } finally {
     updateSyncAvailability();
@@ -298,6 +344,12 @@ async function syncAcademic() {
   if (filtered.some((row) => !String(row.subject || "").trim())) {
     throw new Error("Fill in all class subjects/modules first.");
   }
+  if (filtered.some((row) => !String(row.lecturer || "").trim())) {
+    throw new Error("Fill in lecturer names for all class rows.");
+  }
+  if (filtered.some((row) => !String(row.venue || "").trim())) {
+    throw new Error("Fill in venues for all class rows.");
+  }
 
   statusOutput.textContent = "Syncing class events...";
 
@@ -310,7 +362,9 @@ async function syncAcademic() {
       day: row.day,
       startTime: toApiTime(row.startTime),
       endTime: toApiTime(row.endTime),
-      subject: row.subject
+      subject: row.subject,
+      lecturer: row.lecturer,
+      venue: row.venue
     }))
   };
 
@@ -395,6 +449,8 @@ function renderAcademicTable() {
       </td>
       <td><input type="text" readonly value="${escapeAttr(`${row.startTime} - ${row.endTime}`)}" /></td>
       <td><input type="text" data-field="subject" data-index="${i}" value="${escapeAttr(row.subject)}" /></td>
+      <td><input type="text" data-field="lecturer" data-index="${i}" value="${escapeAttr(row.lecturer || "")}" /></td>
+      <td><input type="text" data-field="venue" data-index="${i}" value="${escapeAttr(row.venue || "")}" /></td>
       <td class="td-actions"><button type="button" data-delete="academic" data-index="${i}">Delete</button></td>
     `;
 
@@ -461,7 +517,13 @@ function bindTableInputs(container, rows) {
     const field = event.target.getAttribute("data-field");
     rows[index][field] = event.target.value;
     if (rows === academicRows && field === "period") {
-      rows[index] = createAcademicRow(rows[index].day, Number(rows[index].period), rows[index].subject);
+      rows[index] = createAcademicRow(
+        rows[index].day,
+        Number(rows[index].period),
+        rows[index].subject,
+        rows[index].lecturer,
+        rows[index].venue
+      );
       refreshModulePicker();
       persistUiState();
       updateSyncAvailability();
@@ -535,7 +597,7 @@ function getAssessmentModuleKey(row) {
   return String(row.moduleCode || row.moduleName || "").trim();
 }
 
-function createAcademicRow(day, period, subject) {
+function createAcademicRow(day, period, subject, lecturer = "", venue = "") {
   const normalizedDay = days.includes(day) ? day : "Monday";
   const slot = getPeriodSlot(period);
   return {
@@ -543,7 +605,9 @@ function createAcademicRow(day, period, subject) {
     period: slot.period,
     startTime: slot.start,
     endTime: slot.end,
-    subject: String(subject || "").trim()
+    subject: String(subject || "").trim(),
+    lecturer: String(lecturer || "").trim(),
+    venue: String(venue || "").trim()
   };
 }
 
@@ -635,6 +699,10 @@ function updateSyncAvailability() {
     reason = "Preview class timetable first.";
   } else if (modeInput.value === "academic" && academicRows.some((row) => !String(row.subject || "").trim())) {
     reason = "Fill in all class subjects/modules first.";
+  } else if (modeInput.value === "academic" && academicRows.some((row) => !String(row.lecturer || "").trim())) {
+    reason = "Fill in lecturer names first.";
+  } else if (modeInput.value === "academic" && academicRows.some((row) => !String(row.venue || "").trim())) {
+    reason = "Fill in class venues first.";
   } else if (modeInput.value === "assessment" && assessmentRows.length === 0) {
     reason = "Preview assessment timetable first.";
   } else if (selectedModules.size === 0) {
@@ -697,7 +765,9 @@ function restoreUiState() {
         createAcademicRow(
           row.day,
           row.period ?? resolvePeriodFromStartTime(normalizeTime(row.startTime)),
-          row.subject
+          row.subject,
+          row.lecturer,
+          row.venue
         ));
     }
     if (Array.isArray(state.assessmentRows)) assessmentRows = state.assessmentRows;
