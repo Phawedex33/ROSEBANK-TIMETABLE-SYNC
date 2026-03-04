@@ -11,10 +11,12 @@ public sealed class AcademicParser : IAcademicParser
     private static readonly Regex GroupMarkerPattern = new("3rd\\s*Year\\s*:\\s*GR(?<group>\\d+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private readonly ITimetableParser _parser;
+    private readonly IRosebankReferenceService _referenceService;
 
-    public AcademicParser(ITimetableParser parser)
+    public AcademicParser(ITimetableParser parser, IRosebankReferenceService referenceService)
     {
         _parser = parser;
+        _referenceService = referenceService;
     }
 
     public AcademicPreviewResponse Parse(string input, int year, string group)
@@ -42,6 +44,8 @@ public sealed class AcademicParser : IAcademicParser
             }
         }
 
+        ApplyReferenceDetails(parsed.AcademicEvents, year, group, parsed.Diagnostics);
+
         return new AcademicPreviewResponse
         {
             Year = year,
@@ -51,6 +55,68 @@ public sealed class AcademicParser : IAcademicParser
             Warnings = parsed.Warnings,
             Diagnostics = parsed.Diagnostics
         };
+    }
+
+    private void ApplyReferenceDetails(List<ClassEvent> events, int year, string group, ICollection<string> diagnostics)
+    {
+        if (events.Count == 0)
+        {
+            return;
+        }
+
+        var matched = 0;
+        var rewritten = new List<ClassEvent>(events.Count);
+        foreach (var e in events)
+        {
+            var moduleCode = ExtractModuleCode(e.Subject);
+            var lecturer = string.IsNullOrWhiteSpace(e.Lecturer) ? "TBA" : e.Lecturer;
+            var venue = string.IsNullOrWhiteSpace(e.Venue) ? "TBA" : e.Venue;
+
+            if (string.IsNullOrWhiteSpace(moduleCode))
+            {
+                rewritten.Add(new ClassEvent
+                {
+                    Day = e.Day,
+                    StartTime = e.StartTime,
+                    EndTime = e.EndTime,
+                    Subject = e.Subject,
+                    Lecturer = lecturer,
+                    Venue = venue
+                });
+                continue;
+            }
+
+            if (_referenceService.TryGetClassDetails(year, group, moduleCode, out var trustedLecturer, out var trustedVenue))
+            {
+                lecturer = trustedLecturer;
+                venue = trustedVenue;
+                matched++;
+            }
+
+            rewritten.Add(new ClassEvent
+            {
+                Day = e.Day,
+                StartTime = e.StartTime,
+                EndTime = e.EndTime,
+                Subject = e.Subject,
+                Lecturer = lecturer,
+                Venue = venue
+            });
+        }
+
+        events.Clear();
+        events.AddRange(rewritten);
+
+        if (matched > 0)
+        {
+            diagnostics.Add($"branch=rosebank_reference_lookup matched={matched}/{events.Count} year={year} group={group}");
+        }
+    }
+
+    private static string ExtractModuleCode(string? subject)
+    {
+        var match = ModuleCodePattern.Match(subject ?? string.Empty);
+        return match.Success ? match.Value.ToUpperInvariant() : string.Empty;
     }
 
     private static List<ClassEvent> BuildRosebankAssistedRows(string input, string group, int year)

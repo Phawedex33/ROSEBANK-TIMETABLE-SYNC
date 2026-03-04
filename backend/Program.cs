@@ -21,6 +21,7 @@ builder.Services.Configure<GoogleCalendarOptions>(builder.Configuration.GetSecti
 builder.Services.AddScoped<ITextExtractionService, TextExtractionService>();
 builder.Services.AddScoped<IPdfTextExtractor, PdfTextExtractor>();
 builder.Services.AddScoped<ITimetableParser, TimetableParser>();
+builder.Services.AddSingleton<IRosebankReferenceService, RosebankReferenceService>();
 builder.Services.AddScoped<IAcademicParser, AcademicParser>();
 builder.Services.AddScoped<IAssessmentParser, AssessmentParser>();
 builder.Services.AddScoped<IAcademicScheduleBuilder, AcademicScheduleBuilder>();

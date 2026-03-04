@@ -1,0 +1,36 @@
+{
+  "rows": [
+    {
+      "verified": true,
+      "year": 3,
+      "group": "GR1",
+      "moduleCode": "ADDB6311",
+      "lecturer": "BM",
+      "venue": "PH 3-11"
+    },
+    {
+      "verified": false,
+      "year": 3,
+      "group": "GR1",
+      "moduleCode": "OPSC6311",
+      "lecturer": "TBA",
+      "venue": "TBA"
+    },
+    {
+      "verified": false,
+      "year": 3,
+      "group": "GR1",
+      "moduleCode": "WEDE6021",
+      "lecturer": "TBA",
+      "venue": "TBA"
+    },
+    {
+      "verified": false,
+      "year": 3,
+      "group": "GR1",
+      "moduleCode": "XISD5319",
+      "lecturer": "TBA",
+      "venue": "TBA"
+    }
+  ]
+}
