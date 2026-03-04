@@ -6,6 +6,7 @@ namespace TimetableSync.Api.Services;
 public sealed class AcademicParser : IAcademicParser
 {
     private static readonly Regex ModuleCodePattern = new("[A-Z]{4}\\d{4}", RegexOptions.Compiled);
+    private static readonly Regex LooseModulePattern = new("[A-Z]{4}\\d{2,4}", RegexOptions.Compiled);
     private static readonly Regex GroupMarkerPattern = new("3rd\\s*Year\\s*:\\s*GR(?<group>\\d+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private readonly ITimetableParser _parser;
@@ -22,7 +23,7 @@ public sealed class AcademicParser : IAcademicParser
             input.Contains("Rosebank College", StringComparison.OrdinalIgnoreCase) &&
             input.Contains("3rd Year: GR", StringComparison.OrdinalIgnoreCase))
         {
-            var fallback = BuildRosebankAssistedRows(input, group);
+            var fallback = BuildRosebankAssistedRows(input, group, year);
             if (fallback.Count > 0)
             {
                 parsed.AcademicEvents.AddRange(fallback);
@@ -47,15 +48,13 @@ public sealed class AcademicParser : IAcademicParser
         };
     }
 
-    private static List<ClassEvent> BuildRosebankAssistedRows(string input, string group)
+    private static List<ClassEvent> BuildRosebankAssistedRows(string input, string group, int year)
     {
         var chunk = TryExtractGroupChunk(input, group, out var groupChunk)
             ? groupChunk
             : input;
 
-        var codes = ModuleCodePattern.Matches(chunk)
-            .Select(m => m.Value.ToUpperInvariant())
-            .ToList();
+        var codes = DetectModuleCodes(chunk, year).ToList();
 
         if (codes.Count == 0)
         {
@@ -93,6 +92,61 @@ public sealed class AcademicParser : IAcademicParser
         }
 
         return rows;
+    }
+
+    private static IEnumerable<string> DetectModuleCodes(string chunk, int year)
+    {
+        var known = GetKnownYearModuleCodes(year);
+        var ordered = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (Match m in ModuleCodePattern.Matches(chunk))
+        {
+            var code = m.Value.ToUpperInvariant();
+            if (seen.Add(code))
+            {
+                ordered.Add(code);
+            }
+        }
+
+        foreach (Match m in LooseModulePattern.Matches(chunk))
+        {
+            var token = m.Value.ToUpperInvariant();
+            if (token.Length < 6)
+            {
+                continue;
+            }
+
+            var prefix = token[..4];
+            var digits = token[4..];
+            var mapped = known.FirstOrDefault(k =>
+                k.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+                k[4..].StartsWith(digits, StringComparison.OrdinalIgnoreCase));
+
+            if (!string.IsNullOrWhiteSpace(mapped) && seen.Add(mapped))
+            {
+                ordered.Add(mapped);
+            }
+        }
+
+        foreach (var knownCode in known)
+        {
+            if (seen.Add(knownCode))
+            {
+                ordered.Add(knownCode);
+            }
+        }
+
+        return ordered;
+    }
+
+    private static IReadOnlyList<string> GetKnownYearModuleCodes(int year)
+    {
+        return year switch
+        {
+            3 => new[] { "ADDB6311", "OPSC6311", "WEDE6021", "XISD5319" },
+            _ => Array.Empty<string>()
+        };
     }
 
     private static bool TryExtractGroupChunk(string input, string group, out string chunk)

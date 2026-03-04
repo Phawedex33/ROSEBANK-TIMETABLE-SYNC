@@ -3,6 +3,17 @@ const assessmentApi = "/api/assessment";
 const appStateKey = "rosebank_sync_ui_state_v1";
 
 const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const periodSlots = [
+  { period: 1, start: "08:00", end: "08:50" },
+  { period: 2, start: "09:00", end: "09:50" },
+  { period: 3, start: "10:00", end: "10:50" },
+  { period: 4, start: "11:00", end: "11:50" },
+  { period: 5, start: "12:00", end: "12:50" },
+  { period: 6, start: "13:00", end: "13:50" },
+  { period: 7, start: "14:00", end: "14:50" },
+  { period: 8, start: "15:00", end: "15:50" },
+  { period: 9, start: "16:00", end: "16:50" }
+];
 
 let academicRows = [];
 let assessmentRows = [];
@@ -54,7 +65,7 @@ function initializeUi() {
     renderModules();
   });
   addAcademicRowBtn.addEventListener("click", () => {
-    academicRows.push({ day: "Monday", startTime: "08:00", endTime: "08:50", subject: "" });
+    academicRows.push(createAcademicRow("Monday", 1, ""));
     refreshModulePicker();
     renderAcademicTable();
   });
@@ -135,12 +146,12 @@ async function previewAcademic() {
   }
 
   const data = await res.json();
-  academicRows = (data.events || []).map((eventItem) => ({
-    day: eventItem.day || "Monday",
-    startTime: normalizeTime(eventItem.startTime),
-    endTime: normalizeTime(eventItem.endTime),
-    subject: eventItem.subject || ""
-  }));
+  academicRows = (data.events || []).map((eventItem) =>
+    createAcademicRow(
+      eventItem.day || "Monday",
+      resolvePeriodFromStartTime(normalizeTime(eventItem.startTime)),
+      eventItem.subject || ""
+    ));
 
   textOutput.textContent = data.extractedText || "No extracted text.";
   updateDiagnostics(data.diagnostics || [], data.warnings || []);
@@ -284,6 +295,9 @@ async function syncAcademic() {
   if (filtered.length === 0) {
     throw new Error("Select at least one module to sync.");
   }
+  if (filtered.some((row) => !String(row.subject || "").trim())) {
+    throw new Error("Fill in all class subjects/modules first.");
+  }
 
   statusOutput.textContent = "Syncing class events...";
 
@@ -374,8 +388,12 @@ function renderAcademicTable() {
           ${days.map((d) => `<option value="${d}" ${d === row.day ? "selected" : ""}>${d}</option>`).join("")}
         </select>
       </td>
-      <td><input type="time" data-field="startTime" data-index="${i}" value="${escapeAttr(row.startTime)}" /></td>
-      <td><input type="time" data-field="endTime" data-index="${i}" value="${escapeAttr(row.endTime)}" /></td>
+      <td>
+        <select data-field="period" data-index="${i}">
+          ${periodSlots.map((slot) => `<option value="${slot.period}" ${slot.period === Number(row.period) ? "selected" : ""}>${slot.period}</option>`).join("")}
+        </select>
+      </td>
+      <td><input type="text" readonly value="${escapeAttr(`${row.startTime} - ${row.endTime}`)}" /></td>
       <td><input type="text" data-field="subject" data-index="${i}" value="${escapeAttr(row.subject)}" /></td>
       <td class="td-actions"><button type="button" data-delete="academic" data-index="${i}">Delete</button></td>
     `;
@@ -442,8 +460,17 @@ function bindTableInputs(container, rows) {
     const index = Number(event.target.getAttribute("data-index"));
     const field = event.target.getAttribute("data-field");
     rows[index][field] = event.target.value;
+    if (rows === academicRows && field === "period") {
+      rows[index] = createAcademicRow(rows[index].day, Number(rows[index].period), rows[index].subject);
+      refreshModulePicker();
+      persistUiState();
+      updateSyncAvailability();
+      renderAcademicTable();
+      return;
+    }
     refreshModulePicker();
     persistUiState();
+    updateSyncAvailability();
   }
 }
 
@@ -506,6 +533,27 @@ function getAcademicModuleKey(subject) {
 
 function getAssessmentModuleKey(row) {
   return String(row.moduleCode || row.moduleName || "").trim();
+}
+
+function createAcademicRow(day, period, subject) {
+  const normalizedDay = days.includes(day) ? day : "Monday";
+  const slot = getPeriodSlot(period);
+  return {
+    day: normalizedDay,
+    period: slot.period,
+    startTime: slot.start,
+    endTime: slot.end,
+    subject: String(subject || "").trim()
+  };
+}
+
+function getPeriodSlot(period) {
+  return periodSlots.find((slot) => slot.period === Number(period)) || periodSlots[0];
+}
+
+function resolvePeriodFromStartTime(startTime) {
+  const slot = periodSlots.find((p) => p.start === normalizeTime(startTime));
+  return slot ? slot.period : 1;
 }
 
 function normalizeTime(value) {
@@ -585,6 +633,8 @@ function updateSyncAvailability() {
     reason = "Connect Google Calendar first.";
   } else if (modeInput.value === "academic" && academicRows.length === 0) {
     reason = "Preview class timetable first.";
+  } else if (modeInput.value === "academic" && academicRows.some((row) => !String(row.subject || "").trim())) {
+    reason = "Fill in all class subjects/modules first.";
   } else if (modeInput.value === "assessment" && assessmentRows.length === 0) {
     reason = "Preview assessment timetable first.";
   } else if (selectedModules.size === 0) {
@@ -642,7 +692,14 @@ function restoreUiState() {
     if (state.duration) durationInput.value = state.duration;
     if (state.timeZone) timeZoneInput.value = state.timeZone;
     if (typeof state.assessmentText === "string") assessmentTextInput.value = state.assessmentText;
-    if (Array.isArray(state.academicRows)) academicRows = state.academicRows;
+    if (Array.isArray(state.academicRows)) {
+      academicRows = state.academicRows.map((row) =>
+        createAcademicRow(
+          row.day,
+          row.period ?? resolvePeriodFromStartTime(normalizeTime(row.startTime)),
+          row.subject
+        ));
+    }
     if (Array.isArray(state.assessmentRows)) assessmentRows = state.assessmentRows;
     if (Array.isArray(state.selectedModules)) selectedModules = new Set(state.selectedModules);
     if (typeof state.extractedText === "string") textOutput.textContent = state.extractedText;
