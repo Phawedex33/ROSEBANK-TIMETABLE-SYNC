@@ -1,5 +1,6 @@
 const academicApi = "/api/academic";
 const assessmentApi = "/api/assessment";
+const appStateKey = "rosebank_sync_ui_state_v1";
 
 const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
@@ -43,6 +44,7 @@ function initializeUi() {
   previewBtn.addEventListener("click", onPreview);
   syncBtn.addEventListener("click", onSync);
   connectGoogleBtn.addEventListener("click", () => {
+    persistUiState();
     window.location.href = "/oauth/google/start";
   });
   disconnectGoogleBtn.addEventListener("click", disconnectGoogle);
@@ -69,6 +71,7 @@ function initializeUi() {
     renderAssessmentTable();
   });
 
+  restoreUiState();
   applyMode();
   renderAcademicTable();
   renderAssessmentTable();
@@ -87,6 +90,7 @@ function applyMode() {
   assessmentTextWrap.classList.toggle("hidden", isAcademic);
 
   refreshModulePicker();
+  persistUiState();
 }
 
 async function onPreview() {
@@ -142,6 +146,7 @@ async function previewAcademic() {
 
   const warningCount = (data.warnings || []).length;
   statusOutput.textContent = `Class preview complete: ${academicRows.length} row(s), ${warningCount} warning(s).`;
+  persistUiState();
 }
 
 async function previewAssessment() {
@@ -187,6 +192,7 @@ async function previewAssessment() {
 
   const warningCount = (data.warnings || []).length;
   statusOutput.textContent = `Assessment preview complete: ${assessmentRows.length} row(s), ${warningCount} warning(s).`;
+  persistUiState();
 }
 
 async function onSync() {
@@ -224,6 +230,7 @@ async function updateGoogleAuthStatus() {
       disconnectGoogleBtn.disabled = false;
       if (new URLSearchParams(window.location.search).get("google") === "connected") {
         statusOutput.textContent = "Google connection successful. You can sync now.";
+        persistUiState();
       }
       return;
     }
@@ -301,6 +308,7 @@ async function syncAcademic() {
 
   const data = await res.json();
   statusOutput.textContent = `Class sync complete: ${data.created} recurring event(s) created.`;
+  persistUiState();
 }
 
 async function syncAssessment() {
@@ -344,6 +352,7 @@ async function syncAssessment() {
 
   const data = await res.json();
   statusOutput.textContent = `Assessment sync complete: ${data.created} event(s) created.`;
+  persistUiState();
 }
 
 function renderAcademicTable() {
@@ -428,6 +437,7 @@ function bindTableInputs(container, rows) {
     const field = event.target.getAttribute("data-field");
     rows[index][field] = event.target.value;
     refreshModulePicker();
+    persistUiState();
   }
 }
 
@@ -469,6 +479,7 @@ function renderModules() {
       } else {
         selectedModules.delete(module);
       }
+      persistUiState();
     });
 
     const text = document.createElement("span");
@@ -547,4 +558,52 @@ function updateDiagnostics(diagnostics, warnings) {
 function setBusy(button, busy, label) {
   button.disabled = busy || (button === syncBtn && !isGoogleConnected);
   button.textContent = label;
+}
+
+function persistUiState() {
+  const state = {
+    mode: modeInput.value,
+    year: yearInput.value,
+    group: groupInput.value,
+    duration: durationInput.value,
+    timeZone: timeZoneInput.value,
+    assessmentText: assessmentTextInput.value,
+    academicRows,
+    assessmentRows,
+    selectedModules: Array.from(selectedModules),
+    extractedText: textOutput.textContent,
+    diagnosticsText: diagnosticsOutput.textContent,
+    statusText: statusOutput.textContent
+  };
+
+  sessionStorage.setItem(appStateKey, JSON.stringify(state));
+}
+
+function restoreUiState() {
+  const raw = sessionStorage.getItem(appStateKey);
+  if (!raw) {
+    return;
+  }
+
+  try {
+    const state = JSON.parse(raw);
+    if (state.mode) {
+      modeInput.value = state.mode;
+      applyMode();
+    }
+
+    if (state.year) yearInput.value = state.year;
+    if (state.group) groupInput.value = state.group;
+    if (state.duration) durationInput.value = state.duration;
+    if (state.timeZone) timeZoneInput.value = state.timeZone;
+    if (typeof state.assessmentText === "string") assessmentTextInput.value = state.assessmentText;
+    if (Array.isArray(state.academicRows)) academicRows = state.academicRows;
+    if (Array.isArray(state.assessmentRows)) assessmentRows = state.assessmentRows;
+    if (Array.isArray(state.selectedModules)) selectedModules = new Set(state.selectedModules);
+    if (typeof state.extractedText === "string") textOutput.textContent = state.extractedText;
+    if (typeof state.diagnosticsText === "string") diagnosticsOutput.textContent = state.diagnosticsText;
+    if (typeof state.statusText === "string") statusOutput.textContent = state.statusText;
+  } catch {
+    sessionStorage.removeItem(appStateKey);
+  }
 }
