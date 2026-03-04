@@ -344,12 +344,6 @@ async function syncAcademic() {
   if (filtered.some((row) => !String(row.subject || "").trim())) {
     throw new Error("Fill in all class subjects/modules first.");
   }
-  if (filtered.some((row) => !String(row.lecturer || "").trim())) {
-    throw new Error("Fill in lecturer names for all class rows.");
-  }
-  if (filtered.some((row) => !String(row.venue || "").trim())) {
-    throw new Error("Fill in venues for all class rows.");
-  }
 
   statusOutput.textContent = "Syncing class events...";
 
@@ -449,8 +443,8 @@ function renderAcademicTable() {
       </td>
       <td><input type="text" readonly value="${escapeAttr(`${row.startTime} - ${row.endTime}`)}" /></td>
       <td><input type="text" data-field="subject" data-index="${i}" value="${escapeAttr(row.subject)}" /></td>
-      <td><input type="text" data-field="lecturer" data-index="${i}" value="${escapeAttr(row.lecturer || "")}" /></td>
-      <td><input type="text" data-field="venue" data-index="${i}" value="${escapeAttr(row.venue || "")}" /></td>
+      <td><input type="text" readonly value="${escapeAttr(row.lecturer || "TBA")}" /></td>
+      <td><input type="text" readonly value="${escapeAttr(row.venue || "TBA")}" /></td>
       <td class="td-actions"><button type="button" data-delete="academic" data-index="${i}">Delete</button></td>
     `;
 
@@ -600,14 +594,16 @@ function getAssessmentModuleKey(row) {
 function createAcademicRow(day, period, subject, lecturer = "", venue = "") {
   const normalizedDay = days.includes(day) ? day : "Monday";
   const slot = getPeriodSlot(period);
+  const normalizedLecturer = String(lecturer || "").trim() || "TBA";
+  const normalizedVenue = String(venue || "").trim() || "TBA";
   return {
     day: normalizedDay,
     period: slot.period,
     startTime: slot.start,
     endTime: slot.end,
     subject: String(subject || "").trim(),
-    lecturer: String(lecturer || "").trim(),
-    venue: String(venue || "").trim()
+    lecturer: normalizedLecturer,
+    venue: normalizedVenue
   };
 }
 
@@ -699,10 +695,6 @@ function updateSyncAvailability() {
     reason = "Preview class timetable first.";
   } else if (modeInput.value === "academic" && academicRows.some((row) => !String(row.subject || "").trim())) {
     reason = "Fill in all class subjects/modules first.";
-  } else if (modeInput.value === "academic" && academicRows.some((row) => !String(row.lecturer || "").trim())) {
-    reason = "Fill in lecturer names first.";
-  } else if (modeInput.value === "academic" && academicRows.some((row) => !String(row.venue || "").trim())) {
-    reason = "Fill in class venues first.";
   } else if (modeInput.value === "assessment" && assessmentRows.length === 0) {
     reason = "Preview assessment timetable first.";
   } else if (selectedModules.size === 0) {

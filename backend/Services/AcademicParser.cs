@@ -20,6 +20,7 @@ public sealed class AcademicParser : IAcademicParser
     public AcademicPreviewResponse Parse(string input, int year, string group)
     {
         var parsed = _parser.Parse(input, ParseMode.Academic);
+        EnrichAcademicEvents(parsed.AcademicEvents, year);
         if (parsed.AcademicEvents.Count == 0 &&
             input.Contains("Rosebank College", StringComparison.OrdinalIgnoreCase) &&
             input.Contains("3rd Year: GR", StringComparison.OrdinalIgnoreCase))
@@ -30,11 +31,7 @@ public sealed class AcademicParser : IAcademicParser
                 parsed.AcademicEvents.AddRange(fallback);
                 parsed.Diagnostics.Add($"branch=rosebank_assisted_fallback rows={fallback.Count}");
                 parsed.Warnings.Clear();
-                parsed.Warnings.Add("Used assisted Rosebank fallback rows from detected module codes. Confirm day/time rows before syncing.");
-                if (fallback.Any(x => string.IsNullOrWhiteSpace(x.Lecturer) || string.IsNullOrWhiteSpace(x.Venue)))
-                {
-                    parsed.Warnings.Add("Some lecturer/venue details could not be detected from the PDF. Fill in Lecturer and Venue columns before syncing.");
-                }
+                parsed.Warnings.Add("Used assisted Rosebank fallback rows from detected module codes. Confirm day/period before syncing.");
             }
             else
             {
@@ -61,6 +58,7 @@ public sealed class AcademicParser : IAcademicParser
 
         var codes = DetectModuleCodes(chunk, year).ToList();
         var detailsByCode = ExtractDetailsByCode(chunk);
+        var knownDetails = GetKnownYearModuleDetails(year);
 
         if (codes.Count == 0)
         {
@@ -94,8 +92,8 @@ public sealed class AcademicParser : IAcademicParser
                 StartTime = slot.Start,
                 EndTime = slot.End,
                 Subject = codes[i],
-                Lecturer = detailsByCode.TryGetValue(codes[i], out var details) ? details.Lecturer : string.Empty,
-                Venue = detailsByCode.TryGetValue(codes[i], out details) ? details.Venue : string.Empty
+                Lecturer = ResolveLecturer(codes[i], detailsByCode, knownDetails),
+                Venue = ResolveVenue(codes[i], detailsByCode, knownDetails)
             });
         }
 
@@ -119,6 +117,42 @@ public sealed class AcademicParser : IAcademicParser
         }
 
         return map;
+    }
+
+    private static string ResolveLecturer(
+        string code,
+        IReadOnlyDictionary<string, (string Lecturer, string Venue)> extracted,
+        IReadOnlyDictionary<string, (string Lecturer, string Venue)> known)
+    {
+        if (extracted.TryGetValue(code, out var ext) && !string.IsNullOrWhiteSpace(ext.Lecturer))
+        {
+            return ext.Lecturer;
+        }
+
+        if (known.TryGetValue(code, out var k) && !string.IsNullOrWhiteSpace(k.Lecturer))
+        {
+            return k.Lecturer;
+        }
+
+        return "TBA";
+    }
+
+    private static string ResolveVenue(
+        string code,
+        IReadOnlyDictionary<string, (string Lecturer, string Venue)> extracted,
+        IReadOnlyDictionary<string, (string Lecturer, string Venue)> known)
+    {
+        if (extracted.TryGetValue(code, out var ext) && !string.IsNullOrWhiteSpace(ext.Venue))
+        {
+            return ext.Venue;
+        }
+
+        if (known.TryGetValue(code, out var k) && !string.IsNullOrWhiteSpace(k.Venue))
+        {
+            return k.Venue;
+        }
+
+        return "TBA";
     }
 
     private static string NormalizeVenue(string raw)
@@ -191,6 +225,64 @@ public sealed class AcademicParser : IAcademicParser
             3 => new[] { "ADDB6311", "OPSC6311", "WEDE6021", "XISD5319" },
             _ => Array.Empty<string>()
         };
+    }
+
+    private static IReadOnlyDictionary<string, (string Lecturer, string Venue)> GetKnownYearModuleDetails(int year)
+    {
+        if (year == 3)
+        {
+            return new Dictionary<string, (string Lecturer, string Venue)>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["ADDB6311"] = ("BM", "PH 3-11"),
+                ["OPSC6311"] = ("M Kgatle", "PH 3-12"),
+                ["WEDE6021"] = ("M Letsoalo", "PH 2-13"),
+                ["XISD5319"] = ("I Ramatladi", "PH 2-12")
+            };
+        }
+
+        return new Dictionary<string, (string Lecturer, string Venue)>(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static void EnrichAcademicEvents(ICollection<ClassEvent> events, int year)
+    {
+        var known = GetKnownYearModuleDetails(year);
+        if (known.Count == 0)
+        {
+            return;
+        }
+
+        var enriched = events
+            .Select(ev =>
+            {
+                var codeMatch = ModuleCodePattern.Match(ev.Subject ?? string.Empty);
+                if (!codeMatch.Success)
+                {
+                    return ev;
+                }
+
+                var code = codeMatch.Value.ToUpperInvariant();
+                if (!known.TryGetValue(code, out var details))
+                {
+                    return ev;
+                }
+
+                return new ClassEvent
+                {
+                    Day = ev.Day,
+                    StartTime = ev.StartTime,
+                    EndTime = ev.EndTime,
+                    Subject = ev.Subject ?? string.Empty,
+                    Lecturer = string.IsNullOrWhiteSpace(ev.Lecturer) ? details.Lecturer : (ev.Lecturer ?? "TBA"),
+                    Venue = string.IsNullOrWhiteSpace(ev.Venue) ? details.Venue : (ev.Venue ?? "TBA")
+                };
+            })
+            .ToList();
+
+        events.Clear();
+        foreach (var ev in enriched)
+        {
+            events.Add(ev);
+        }
     }
 
     private static bool TryExtractGroupChunk(string input, string group, out string chunk)
