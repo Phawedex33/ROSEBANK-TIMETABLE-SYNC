@@ -9,6 +9,7 @@ let assessmentRows = [];
 let availableModules = [];
 let selectedModules = new Set();
 let isGoogleConnected = false;
+let syncBusy = false;
 
 const modeInput = document.getElementById("mode");
 const fileInput = document.getElementById("fileInput");
@@ -77,6 +78,7 @@ function initializeUi() {
   renderAssessmentTable();
   refreshModulePicker();
   updateGoogleAuthStatus();
+  updateSyncAvailability();
 }
 
 function applyMode() {
@@ -91,6 +93,7 @@ function applyMode() {
 
   refreshModulePicker();
   persistUiState();
+  updateSyncAvailability();
 }
 
 async function onPreview() {
@@ -147,6 +150,7 @@ async function previewAcademic() {
   const warningCount = (data.warnings || []).length;
   statusOutput.textContent = `Class preview complete: ${academicRows.length} row(s), ${warningCount} warning(s).`;
   persistUiState();
+  updateSyncAvailability();
 }
 
 async function previewAssessment() {
@@ -193,13 +197,15 @@ async function previewAssessment() {
   const warningCount = (data.warnings || []).length;
   statusOutput.textContent = `Assessment preview complete: ${assessmentRows.length} row(s), ${warningCount} warning(s).`;
   persistUiState();
+  updateSyncAvailability();
 }
 
 async function onSync() {
+  syncBusy = true;
   setBusy(syncBtn, true, "Syncing...");
   try {
-    if (syncBtn.disabled) {
-      throw new Error("Connect Google Calendar first.");
+    if (syncBtn.dataset.disabledReason) {
+      throw new Error(syncBtn.dataset.disabledReason);
     }
 
     if (modeInput.value === "academic") {
@@ -211,7 +217,8 @@ async function onSync() {
   } catch (err) {
     statusOutput.textContent = err.message;
   } finally {
-    setBusy(syncBtn, false, "Sync Edited Events");
+    syncBusy = false;
+    updateSyncAvailability();
   }
 }
 
@@ -225,7 +232,6 @@ async function updateGoogleAuthStatus() {
     const data = await res.json();
     if (data.connected) {
       isGoogleConnected = true;
-      syncBtn.disabled = false;
       authStatus.textContent = "Connected to Google Calendar.";
       disconnectGoogleBtn.disabled = false;
       if (new URLSearchParams(window.location.search).get("google") === "connected") {
@@ -236,14 +242,14 @@ async function updateGoogleAuthStatus() {
     }
 
     isGoogleConnected = false;
-    syncBtn.disabled = true;
     disconnectGoogleBtn.disabled = true;
     authStatus.textContent = "Not connected. Click 'Connect Google Calendar' before syncing.";
   } catch {
     isGoogleConnected = false;
-    syncBtn.disabled = true;
     disconnectGoogleBtn.disabled = true;
     authStatus.textContent = "Could not verify Google connection.";
+  } finally {
+    updateSyncAvailability();
   }
 }
 
@@ -258,7 +264,6 @@ async function disconnectGoogle() {
     }
 
     isGoogleConnected = false;
-    syncBtn.disabled = true;
     authStatus.textContent = "Disconnected from Google Calendar.";
     statusOutput.textContent = "Google connection removed.";
   } catch (err) {
@@ -266,6 +271,7 @@ async function disconnectGoogle() {
   } finally {
     setBusy(disconnectGoogleBtn, false, "Disconnect");
     await updateGoogleAuthStatus();
+    updateSyncAvailability();
   }
 }
 
@@ -454,6 +460,7 @@ function refreshModulePicker() {
   }
 
   renderModules();
+  updateSyncAvailability();
 }
 
 function renderModules() {
@@ -480,6 +487,7 @@ function renderModules() {
         selectedModules.delete(module);
       }
       persistUiState();
+      updateSyncAvailability();
     });
 
     const text = document.createElement("span");
@@ -556,8 +564,45 @@ function updateDiagnostics(diagnostics, warnings) {
 }
 
 function setBusy(button, busy, label) {
-  button.disabled = busy || (button === syncBtn && !isGoogleConnected);
+  if (button === syncBtn) {
+    button.disabled = busy;
+  } else {
+    button.disabled = busy || (button === syncBtn && !isGoogleConnected);
+  }
   button.textContent = label;
+}
+
+function updateSyncAvailability() {
+  if (syncBusy) {
+    syncBtn.disabled = true;
+    syncBtn.dataset.disabledReason = "";
+    syncBtn.title = "";
+    return;
+  }
+
+  let reason = "";
+  if (!isGoogleConnected) {
+    reason = "Connect Google Calendar first.";
+  } else if (modeInput.value === "academic" && academicRows.length === 0) {
+    reason = "Preview class timetable first.";
+  } else if (modeInput.value === "assessment" && assessmentRows.length === 0) {
+    reason = "Preview assessment timetable first.";
+  } else if (selectedModules.size === 0) {
+    reason = "Select at least one module to sync.";
+  }
+
+  if (reason) {
+    syncBtn.disabled = true;
+    syncBtn.textContent = reason;
+    syncBtn.title = reason;
+    syncBtn.dataset.disabledReason = reason;
+    return;
+  }
+
+  syncBtn.disabled = false;
+  syncBtn.textContent = "Sync Edited Events";
+  syncBtn.title = "";
+  syncBtn.dataset.disabledReason = "";
 }
 
 function persistUiState() {
