@@ -15,6 +15,15 @@ dist/
 *.egg
 pip-wheel-metadata/
 
+# Node / frontend artifacts
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
+
 # Virtual environments
 .venv/
 venv/
@@ -58,9 +67,17 @@ Thumbs.db
 
 # Logs
 *.log
+build_output.txt
+integration_fail_details.txt
+test_debug.txt
+test_final_debug.txt
+test_results.txt
+tests/TimetableSync.Api.Tests/TestResults/
+tests/TimetableSync.Api.Tests/test_output.txt
 
 # .NET
 **/bin/
 **/obj/
 backend/artifacts/
 backend/timetable-sync-token/
+backend/timetable-sync-keys/

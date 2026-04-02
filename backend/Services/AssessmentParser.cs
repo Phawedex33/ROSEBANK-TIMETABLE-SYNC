@@ -6,8 +6,8 @@ namespace TimetableSync.Api.Services;
 
 public sealed class AssessmentParser : IAssessmentParser
 {
-    private const string DateToken = "\\d{1,2}(?:[-/ ]?)(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|\\d{1,2})(?:[-/ ]?)\\d{2,4}";
-    private const string TimeToken = "(?:[01]?\\d|2[0-3]):[0-5]\\d|23:59";
+    private const string DateToken = "\\d{1,2}(?:[-/ ]+)(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|\\d{1,2})(?:[-/ ]+)\\d{2,4}";
+    private const string TimeToken = "(?:[01]?\\d|2[0-3])[:h][0-5]\\d|23:59";
 
     private static readonly Regex SegmentPattern = new(
         "(?<prog>DIS\\d)\\s+(?<code>[A-Z]{4}\\d{4})\\s+(?<name>.+?)\\s+(?<type>Practical\\s+Assignment\\s*\\d*(?:\\s+Deferred)?|Practical\\s+Test\\s*\\d*(?:\\s+Deferred)?|Theory\\s+Test\\s*\\d*(?:\\s+Deferred)?|Final\\s+Exam|Assignment\\s*\\d*(?:\\s+Deferred)?|Project\\s*\\d*(?:\\s+Deferred)?|Test\\s*\\d*(?:\\s+Sitting\\s*[12])?|Part\\s*\\d*(?:\\s+Deferred)?|Task\\s*\\d*(?:\\s+Deferred)?|Exam|Quiz\\s*\\d*|Presentation\\s*\\d*)\\s+(?<delivery>Campus\\s+Sitting|Online\\s+Submission(?:\\s+Turnitin)?)\\s+(?<date>" + DateToken + ")\\s+(?<time>" + TimeToken + ")(?=\\s+DIS\\d\\s+[A-Z]{4}\\d{4}\\b|$)",
@@ -39,6 +39,10 @@ public sealed class AssessmentParser : IAssessmentParser
 
     private static readonly Regex SittingPattern = new(
         "Sitting\\s*(?<sitting>[12])",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex ProgramCodePattern = new(
+        "\\bDIS\\d\\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     public AssessmentPreviewResponse Parse(string input)
@@ -296,7 +300,7 @@ public sealed class AssessmentParser : IAssessmentParser
             }
         }
 
-        return afterCode.Length <= 120 ? afterCode : string.Empty;
+        return afterCode.Length <= 140 ? afterCode : string.Empty;
     }
 
     private static string DetectDeliveryMode(string value)
@@ -325,7 +329,7 @@ public sealed class AssessmentParser : IAssessmentParser
         if (timeMatches.Count > 0)
         {
             var idx = Math.Min(dateIndex, timeMatches.Count - 1);
-            var raw = timeMatches[idx].Groups["time"].Value;
+            var raw = timeMatches[idx].Groups["time"].Value.Replace("h", ":", StringComparison.OrdinalIgnoreCase);
             if (TimeOnly.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed))
             {
                 return parsed;
@@ -343,6 +347,13 @@ public sealed class AssessmentParser : IAssessmentParser
         AssessmentEvent ev,
         string diagnostic)
     {
+        if (TryGetSuspiciousEventReason(ev, out var suspiciousReason))
+        {
+            response.Warnings.Add($"Skipped suspicious assessment row for {ev.ModuleCode}: {suspiciousReason}");
+            response.Diagnostics.Add($"branch=suspicious_skip module={ev.ModuleCode} reason={suspiciousReason}");
+            return;
+        }
+
         var key = $"{ev.ModuleCode}|{ev.AssessmentType}|{ev.Date:yyyy-MM-dd}|{ev.Time:HH:mm}|{ev.Sitting}";
         if (dedupe.Add(key))
         {
@@ -376,6 +387,48 @@ public sealed class AssessmentParser : IAssessmentParser
         return DateOnly.TryParse(input, CultureInfo.InvariantCulture, DateTimeStyles.None, out date);
     }
 
+    private static bool TryGetSuspiciousEventReason(AssessmentEvent ev, out string reason)
+    {
+        var moduleName = NormalizeText(ev.ModuleName);
+        if (string.IsNullOrWhiteSpace(moduleName))
+        {
+            reason = string.Empty;
+            return false;
+        }
+
+        if (moduleName.Length > 120)
+        {
+            reason = "module name is implausibly long";
+            return true;
+        }
+
+        var extraModuleCodes = ModuleCodePattern.Matches(moduleName)
+            .Select(x => x.Groups["code"].Value.Trim().ToUpperInvariant())
+            .Where(code => !string.Equals(code, ev.ModuleCode, StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (extraModuleCodes.Count > 0)
+        {
+            reason = $"module name contains other module codes ({string.Join(", ", extraModuleCodes)})";
+            return true;
+        }
+
+        if (ProgramCodePattern.IsMatch(moduleName))
+        {
+            reason = "module name contains programme markers";
+            return true;
+        }
+
+        if (DatePattern.Matches(moduleName).Count > 0 || TimePattern.Matches(moduleName).Count > 0)
+        {
+            reason = "module name contains date or time tokens";
+            return true;
+        }
+
+        reason = string.Empty;
+        return false;
+    }
+
     private static string NormalizeText(string value)
     {
         return Regex.Replace(value, "\\s+", " ").Trim();
@@ -391,6 +444,7 @@ public sealed class AssessmentParser : IAssessmentParser
         expanded = Regex.Replace(expanded, "(?<=[A-Za-z])(?=\\d{1,2}(?:[-/ ]?)[A-Za-z]{3}(?:[-/ ]?)\\d{2,4})", " ");
         expanded = Regex.Replace(expanded, "(?<=[A-Za-z])(?=\\d{2}:\\d{2})", " ");
         expanded = Regex.Replace(expanded, "(?<date>\\d{1,2}(?:[-/ ]?)[A-Za-z]{3}(?:[-/ ]?)\\d{2,4})(?<time>\\d{2}:\\d{2})", "${date} ${time}");
+        expanded = Regex.Replace(expanded, "(?<dis>DIS\\d)(?<code>[A-Z]{4}\\d{4})", "${dis} ${code}");
         expanded = Regex.Replace(expanded, "[ \\t\\r\\f\\v]+", " ");
         expanded = expanded.Replace(" DIS1 ", "\nDIS1 ");
         expanded = expanded.Replace(" DIS2 ", "\nDIS2 ");

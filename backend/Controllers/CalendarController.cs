@@ -18,9 +18,14 @@ public sealed class CalendarController : ControllerBase
     [HttpPost("delete-synced")]
     public async Task<IActionResult> DeleteSynced([FromBody] CalendarDeleteRequest request, CancellationToken cancellationToken)
     {
+        if (!Request.Cookies.TryGetValue("sync_user_id", out var userId) || string.IsNullOrWhiteSpace(userId))
+        {
+            return Unauthorized("Google account not connected. Open /oauth/google/start first.");
+        }
+
         try
         {
-            var result = await _calendar.DeleteManagedEventsAsync(request, cancellationToken);
+            var result = await _calendar.DeleteManagedEventsAsync(userId, request, cancellationToken);
             return Ok(result);
         }
         catch (InvalidOperationException ex)

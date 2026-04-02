@@ -4,7 +4,6 @@ using Google.Apis.Auth.OAuth2.Responses;
 using Google.Apis.Calendar.v3;
 using Google.Apis.Calendar.v3.Data;
 using Google.Apis.Services;
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 using TimetableSync.Api.Models;
 
@@ -12,18 +11,19 @@ namespace TimetableSync.Api.Services;
 
 public sealed class GoogleCalendarService : IGoogleCalendarService
 {
-    private readonly GoogleCalendarOptions _options;
-    private readonly IHttpContextAccessor _httpContextAccessor;
 
-    public GoogleCalendarService(IOptions<GoogleCalendarOptions> options, IHttpContextAccessor httpContextAccessor)
+    private readonly GoogleCalendarOptions _options;
+    private readonly ITokenStore _tokenStore;
+
+    public GoogleCalendarService(IOptions<GoogleCalendarOptions> options, ITokenStore tokenStore)
     {
         _options = options.Value;
-        _httpContextAccessor = httpContextAccessor;
+        _tokenStore = tokenStore;
     }
 
-    public async Task<SyncResponse> CreateWeeklyEventsAsync(SyncRequest request, CancellationToken cancellationToken)
+    public async Task<SyncResponse> CreateWeeklyEventsAsync(string userId, SyncRequest request, CancellationToken cancellationToken)
     {
-        var service = await CreateCalendarClientAsync(cancellationToken);
+        var service = await CreateCalendarClientAsync(userId, cancellationToken);
 
         var response = new SyncResponse();
         var nowDate = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -73,8 +73,18 @@ public sealed class GoogleCalendarService : IGoogleCalendarService
                 {
                     $"RRULE:FREQ=WEEKLY;UNTIL={recurrenceEndDate.ToDateTime(TimeOnly.MaxValue):yyyyMMdd'T'HHmmss'Z'}"
                 },
-                ColorId = "9"
+                ColorId = "9",
+                Reminders = new Event.RemindersData
+                {
+                    UseDefault = false,
+                    Overrides = new List<EventReminder>
+                    {
+                        new() { Method = "popup", Minutes = 1440 },  // 1 day before
+                        new() { Method = "popup", Minutes = 120 }    // 2 hours before
+                    }
+                }
             };
+
 
             var created = await service.Events.Insert(recurringEvent, _options.CalendarId).ExecuteAsync(cancellationToken);
             if (!string.IsNullOrWhiteSpace(created.Id))
@@ -87,7 +97,7 @@ public sealed class GoogleCalendarService : IGoogleCalendarService
         return response;
     }
 
-    public async Task<SyncResponse> CreateAssessmentEventsAsync(AssessmentSyncRequest request, CancellationToken cancellationToken)
+    public async Task<SyncResponse> CreateAssessmentEventsAsync(string userId, AssessmentSyncRequest request, CancellationToken cancellationToken)
     {
         var mapped = request.Events.Select(item => new ExamEvent
         {
@@ -101,6 +111,7 @@ public sealed class GoogleCalendarService : IGoogleCalendarService
         }).ToList();
 
         return await CreateExamEventsInternalAsync(
+            userId,
             mapped,
             request.TimeZone,
             request.DurationMinutes,
@@ -109,9 +120,10 @@ public sealed class GoogleCalendarService : IGoogleCalendarService
             cancellationToken);
     }
 
-    public async Task<SyncResponse> CreateExamEventsAsync(ExamSyncRequest request, CancellationToken cancellationToken)
+    public async Task<SyncResponse> CreateExamEventsAsync(string userId, ExamSyncRequest request, CancellationToken cancellationToken)
     {
         return await CreateExamEventsInternalAsync(
+            userId,
             request.Events,
             request.TimeZone,
             request.DurationMinutes,
@@ -120,9 +132,9 @@ public sealed class GoogleCalendarService : IGoogleCalendarService
             cancellationToken);
     }
 
-    public async Task<CalendarDeleteResponse> DeleteManagedEventsAsync(CalendarDeleteRequest request, CancellationToken cancellationToken)
+    public async Task<CalendarDeleteResponse> DeleteManagedEventsAsync(string userId, CalendarDeleteRequest request, CancellationToken cancellationToken)
     {
-        var service = await CreateCalendarClientAsync(cancellationToken);
+        var service = await CreateCalendarClientAsync(userId, cancellationToken);
         var response = new CalendarDeleteResponse();
         var (fromUtc, toUtc) = ResolveDeleteWindow(request.FromDate, request.ToDate);
         var prefixes = ResolveManagedPrefixes(request.Mode);
@@ -140,16 +152,10 @@ public sealed class GoogleCalendarService : IGoogleCalendarService
             var events = await listRequest.ExecuteAsync(cancellationToken);
             foreach (var ev in events.Items ?? Enumerable.Empty<Event>())
             {
-                if (string.IsNullOrWhiteSpace(ev.Id))
-                {
-                    continue;
-                }
+                if (string.IsNullOrWhiteSpace(ev.Id)) continue;
 
                 var summary = ev.Summary ?? string.Empty;
-                if (!prefixes.Any(prefix => summary.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
-                {
-                    continue;
-                }
+                if (!prefixes.Any(prefix => summary.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))) continue;
 
                 await service.Events.Delete(_options.CalendarId, ev.Id).ExecuteAsync(cancellationToken);
                 response.EventIds.Add(ev.Id);
@@ -163,6 +169,7 @@ public sealed class GoogleCalendarService : IGoogleCalendarService
     }
 
     private async Task<SyncResponse> CreateExamEventsInternalAsync(
+        string userId,
         IReadOnlyCollection<ExamEvent> events,
         string timeZone,
         int durationMinutes,
@@ -170,7 +177,7 @@ public sealed class GoogleCalendarService : IGoogleCalendarService
         string colorId,
         CancellationToken cancellationToken)
     {
-        var service = await CreateCalendarClientAsync(cancellationToken);
+        var service = await CreateCalendarClientAsync(userId, cancellationToken);
         var response = new SyncResponse();
         var duration = durationMinutes <= 0 ? 60 : durationMinutes;
 
@@ -188,16 +195,8 @@ public sealed class GoogleCalendarService : IGoogleCalendarService
             {
                 Summary = summary,
                 Description = BuildExamDescription(item),
-                Start = new EventDateTime
-                {
-                    DateTime = start,
-                    TimeZone = timeZone
-                },
-                End = new EventDateTime
-                {
-                    DateTime = end,
-                    TimeZone = timeZone
-                },
+                Start = new EventDateTime { DateTimeDateTimeOffset = new DateTimeOffset(start, TimeSpan.Zero), TimeZone = timeZone },
+                End = new EventDateTime { DateTimeDateTimeOffset = new DateTimeOffset(end, TimeSpan.Zero), TimeZone = timeZone },
                 ColorId = colorId,
                 Reminders = new Event.RemindersData
                 {
@@ -221,45 +220,29 @@ public sealed class GoogleCalendarService : IGoogleCalendarService
         return response;
     }
 
-    private async Task<CalendarService> CreateCalendarClientAsync(CancellationToken cancellationToken)
+    private async Task<CalendarService> CreateCalendarClientAsync(string userId, CancellationToken cancellationToken)
     {
-        var session = _httpContextAccessor.HttpContext?.Session
-            ?? throw new InvalidOperationException("Session is not available.");
-
-        var accessToken = session.GetString("google_access_token");
-        var refreshToken = session.GetString("google_refresh_token");
-        if (string.IsNullOrWhiteSpace(accessToken) && string.IsNullOrWhiteSpace(refreshToken))
+        var stored = await _tokenStore.LoadAsync(userId, cancellationToken);
+        if (stored is null || (string.IsNullOrWhiteSpace(stored.AccessToken) && string.IsNullOrWhiteSpace(stored.RefreshToken)))
         {
             throw new InvalidOperationException("Google account not connected. Open /oauth/google/start first.");
         }
 
-        var expiresAtRaw = session.GetString("google_token_expiry_utc");
-        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(5);
-        if (!string.IsNullOrWhiteSpace(expiresAtRaw) &&
-            DateTimeOffset.TryParse(expiresAtRaw, out var parsedExpiry))
+        var expiresIn = Math.Max(1, (long)Math.Ceiling((stored.ExpiresAtUtc - DateTimeOffset.UtcNow).TotalSeconds));
+        var tokenResponse = new TokenResponse
         {
-            expiresAt = parsedExpiry;
-        }
-
-        var expiresIn = Math.Max(1, (long)Math.Ceiling((expiresAt - DateTimeOffset.UtcNow).TotalSeconds));
-        var token = new TokenResponse
-        {
-            AccessToken = accessToken,
-            RefreshToken = refreshToken,
+            AccessToken = stored.AccessToken,
+            RefreshToken = stored.RefreshToken,
             ExpiresInSeconds = expiresIn
         };
 
         var flow = new GoogleAuthorizationCodeFlow(new GoogleAuthorizationCodeFlow.Initializer
         {
-            ClientSecrets = new ClientSecrets
-            {
-                ClientId = _options.ClientId,
-                ClientSecret = _options.ClientSecret
-            },
+            ClientSecrets = new ClientSecrets { ClientId = _options.ClientId, ClientSecret = _options.ClientSecret },
             Scopes = new[] { CalendarService.Scope.Calendar }
         });
 
-        var credential = new UserCredential(flow, "web-user", token);
+        var credential = new UserCredential(flow, "file-store-user", tokenResponse);
         if (credential.Token.IsStale)
         {
             var refreshed = await credential.RefreshTokenAsync(cancellationToken);
@@ -268,7 +251,9 @@ public sealed class GoogleCalendarService : IGoogleCalendarService
                 throw new InvalidOperationException("Google token refresh failed. Reconnect using /oauth/google/start.");
             }
 
-            PersistTokenToSession(session, credential.Token, refreshToken);
+            var newExpiry = DateTimeOffset.UtcNow.AddSeconds(Math.Max(1, credential.Token.ExpiresInSeconds ?? 3600));
+            var refreshToken = !string.IsNullOrWhiteSpace(credential.Token.RefreshToken) ? credential.Token.RefreshToken : stored.RefreshToken;
+            await _tokenStore.SaveAsync(userId, new StoredToken(credential.Token.AccessToken, refreshToken, newExpiry), cancellationToken);
         }
 
         return new CalendarService(new BaseClientService.Initializer
@@ -278,69 +263,20 @@ public sealed class GoogleCalendarService : IGoogleCalendarService
         });
     }
 
-    private static void PersistTokenToSession(ISession session, TokenResponse token, string? existingRefreshToken)
-    {
-        if (!string.IsNullOrWhiteSpace(token.AccessToken))
-        {
-            session.SetString("google_access_token", token.AccessToken);
-        }
-
-        var refreshToken = !string.IsNullOrWhiteSpace(token.RefreshToken)
-            ? token.RefreshToken
-            : existingRefreshToken;
-        if (!string.IsNullOrWhiteSpace(refreshToken))
-        {
-            session.SetString("google_refresh_token", refreshToken);
-        }
-
-        var expiresIn = token.ExpiresInSeconds ?? 3600;
-        var expiresAt = DateTimeOffset.UtcNow.AddSeconds(Math.Max(1, expiresIn));
-        session.SetString("google_token_expiry_utc", expiresAt.ToString("O"));
-    }
-
     private static string BuildExamDescription(ExamEvent item)
     {
-        var details = new List<string>
-        {
-            $"Module: {item.ModuleCode}",
-            $"Assessment: {item.AssessmentType}"
-        };
-
-        if (!string.IsNullOrWhiteSpace(item.ModuleName))
-        {
-            details.Add($"Name: {item.ModuleName}");
-        }
-
-        if (item.Sitting.HasValue)
-        {
-            details.Add($"Sitting: {item.Sitting.Value}");
-        }
-
-        if (!string.IsNullOrWhiteSpace(item.DeliveryMode))
-        {
-            details.Add($"Mode: {item.DeliveryMode}");
-        }
-
+        var details = new List<string> { $"Module: {item.ModuleCode}", $"Assessment: {item.AssessmentType}" };
+        if (!string.IsNullOrWhiteSpace(item.ModuleName)) details.Add($"Name: {item.ModuleName}");
+        if (item.Sitting.HasValue) details.Add($"Sitting: {item.Sitting.Value}");
+        if (!string.IsNullOrWhiteSpace(item.DeliveryMode)) details.Add($"Mode: {item.DeliveryMode}");
         return string.Join(Environment.NewLine, details);
     }
 
     private static string BuildClassDescription(ClassEvent item)
     {
-        var lines = new List<string>
-        {
-            $"Subject: {item.Subject}"
-        };
-
-        if (!string.IsNullOrWhiteSpace(item.Lecturer))
-        {
-            lines.Add($"Lecturer: {item.Lecturer}");
-        }
-
-        if (!string.IsNullOrWhiteSpace(item.Venue))
-        {
-            lines.Add($"Venue: {item.Venue}");
-        }
-
+        var lines = new List<string> { $"Subject: {item.Subject}" };
+        if (!string.IsNullOrWhiteSpace(item.Lecturer)) lines.Add($"Lecturer: {item.Lecturer}");
+        if (!string.IsNullOrWhiteSpace(item.Venue)) lines.Add($"Venue: {item.Venue}");
         return string.Join(Environment.NewLine, lines);
     }
 
@@ -357,27 +293,15 @@ public sealed class GoogleCalendarService : IGoogleCalendarService
     private static IReadOnlyList<string> ResolveManagedPrefixes(string mode)
     {
         var normalized = (mode ?? string.Empty).Trim().ToLowerInvariant();
-        if (normalized is "academic" or "class")
-        {
-            return new[] { "[CLASS]" };
-        }
-
-        if (normalized is "assessment" or "exam")
-        {
-            return new[] { "[ASSESSMENT]", "[EXAM]" };
-        }
-
+        if (normalized is "academic" or "class") return new[] { "[CLASS]" };
+        if (normalized is "assessment" or "exam") return new[] { "[ASSESSMENT]", "[EXAM]" };
         return new[] { "[CLASS]", "[ASSESSMENT]", "[EXAM]" };
     }
 
     private static DateOnly GetNextDateForDay(DayOfWeek target, DateOnly from)
     {
         var daysToAdd = ((int)target - (int)from.DayOfWeek + 7) % 7;
-        if (daysToAdd == 0)
-        {
-            daysToAdd = 7;
-        }
-
+        if (daysToAdd == 0) daysToAdd = 7;
         return from.AddDays(daysToAdd);
     }
 }

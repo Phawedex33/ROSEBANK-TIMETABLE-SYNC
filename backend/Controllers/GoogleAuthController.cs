@@ -11,13 +11,38 @@ namespace TimetableSync.Api.Controllers;
 [Route("oauth/google")]
 public sealed class GoogleAuthController : ControllerBase
 {
+
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly GoogleCalendarOptions _options;
+    private readonly ITokenStore _tokenStore;
 
-    public GoogleAuthController(IHttpClientFactory httpClientFactory, IOptions<GoogleCalendarOptions> options)
+    public GoogleAuthController(
+        IHttpClientFactory httpClientFactory,
+        IOptions<GoogleCalendarOptions> options,
+        ITokenStore tokenStore)
     {
         _httpClientFactory = httpClientFactory;
         _options = options.Value;
+        _tokenStore = tokenStore;
+    }
+
+    private string GetSessionUserId()
+    {
+        if (Request.Cookies.TryGetValue("sync_user_id", out var userId) && !string.IsNullOrWhiteSpace(userId))
+        {
+            return userId;
+        }
+
+        userId = Guid.NewGuid().ToString("N");
+        Response.Cookies.Append("sync_user_id", userId, new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = true, // We are running https on 7068
+            SameSite = SameSiteMode.Lax,
+            Expires = DateTimeOffset.UtcNow.AddDays(30)
+        });
+
+        return userId;
     }
 
     [HttpGet("start")]
@@ -48,33 +73,36 @@ public sealed class GoogleAuthController : ControllerBase
     }
 
     [HttpGet("status")]
-    public IActionResult Status()
+    public async Task<IActionResult> Status(CancellationToken cancellationToken)
     {
-        var accessToken = HttpContext.Session.GetString("google_access_token");
-        var refreshToken = HttpContext.Session.GetString("google_refresh_token");
-        var expiryUtc = HttpContext.Session.GetString("google_token_expiry_utc");
-        var connected = !string.IsNullOrWhiteSpace(accessToken) || !string.IsNullOrWhiteSpace(refreshToken);
+        var userId = GetSessionUserId();
+        var token = await _tokenStore.LoadAsync(userId, cancellationToken);
+        var connected = token is not null &&
+            (!string.IsNullOrWhiteSpace(token.AccessToken) || !string.IsNullOrWhiteSpace(token.RefreshToken));
 
         return Ok(new
         {
             connected,
-            expiresAtUtc = expiryUtc
+            email = (string?)null,
+            expiresAtUtc = token?.ExpiresAtUtc.ToString("O")
         });
     }
 
     [HttpPost("disconnect")]
-    public IActionResult Disconnect()
+    public async Task<IActionResult> Disconnect(CancellationToken cancellationToken)
     {
-        HttpContext.Session.Remove("google_access_token");
-        HttpContext.Session.Remove("google_refresh_token");
-        HttpContext.Session.Remove("google_token_expiry_utc");
+        var userId = GetSessionUserId();
+        await _tokenStore.ClearAsync(userId, cancellationToken);
         HttpContext.Session.Remove("google_oauth_state");
-
         return Ok(new { disconnected = true });
     }
 
     [HttpGet("callback")]
-    public async Task<IActionResult> Callback([FromQuery] string? code, [FromQuery] string? state, [FromQuery] string? error, CancellationToken cancellationToken)
+    public async Task<IActionResult> Callback(
+        [FromQuery] string? code,
+        [FromQuery] string? state,
+        [FromQuery] string? error,
+        CancellationToken cancellationToken)
     {
         if (!string.IsNullOrWhiteSpace(error))
         {
@@ -120,14 +148,10 @@ public sealed class GoogleAuthController : ControllerBase
             return BadRequest("Token response was invalid.");
         }
 
-        HttpContext.Session.SetString("google_access_token", token.AccessToken);
-        if (!string.IsNullOrWhiteSpace(token.RefreshToken))
-        {
-            HttpContext.Session.SetString("google_refresh_token", token.RefreshToken);
-        }
+        var userId = GetSessionUserId();
+        var expiresAt = DateTimeOffset.UtcNow.AddSeconds(Math.Max(token.ExpiresIn, 0));
+        await _tokenStore.SaveAsync(userId, new StoredToken(token.AccessToken, token.RefreshToken, expiresAt), cancellationToken);
 
-        var expiresAtUtc = DateTimeOffset.UtcNow.AddSeconds(Math.Max(token.ExpiresIn, 0));
-        HttpContext.Session.SetString("google_token_expiry_utc", expiresAtUtc.ToString("O"));
         HttpContext.Session.Remove("google_oauth_state");
 
         return Redirect("/?google=connected");
@@ -138,7 +162,7 @@ public sealed class GoogleAuthController : ControllerBase
         [JsonPropertyName("access_token")]
         public string AccessToken { get; init; } = string.Empty;
         [JsonPropertyName("refresh_token")]
-        public string RefreshToken { get; init; } = string.Empty;
+        public string? RefreshToken { get; init; }
         [JsonPropertyName("expires_in")]
         public int ExpiresIn { get; init; }
     }

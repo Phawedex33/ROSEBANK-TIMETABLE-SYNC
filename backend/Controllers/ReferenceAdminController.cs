@@ -61,6 +61,25 @@ public sealed class ReferenceAdminController : ControllerBase
         return Ok(new { saved = request.Rows.Count });
     }
 
+    [HttpPost("import")]
+    public async Task<IActionResult> ImportRows(IFormFile file, CancellationToken cancellationToken)
+    {
+        var authError = ValidateAdminAccess();
+        if (authError is not null)
+        {
+            return authError;
+        }
+
+        if (file == null || file.Length == 0)
+        {
+            return BadRequest("No file uploaded.");
+        }
+
+        using var stream = file.OpenReadStream();
+        var imported = await _referenceService.ImportCsvAsync(stream, cancellationToken);
+        return Ok(new { imported });
+    }
+
     private IActionResult? ValidateAdminAccess()
     {
         if (!_options.Enabled)

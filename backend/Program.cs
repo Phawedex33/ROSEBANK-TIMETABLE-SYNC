@@ -1,4 +1,5 @@
 using Microsoft.Extensions.FileProviders;
+using Microsoft.AspNetCore.DataProtection;
 using System.Text.Json.Serialization;
 using TimetableSync.Api.Services;
 
@@ -12,9 +13,19 @@ builder.Services.AddControllers().AddJsonOptions(options =>
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddHttpClient();
-builder.Services.AddHttpContextAccessor();
+
+// Data protection persistence to survive restarts/replacements
+var keysPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TimetableSyncKeys");
+Directory.CreateDirectory(keysPath);
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(keysPath))
+    .SetApplicationName("TimetableSync")
+    .SetDefaultKeyLifetime(TimeSpan.FromDays(90));
+// Session is retained solely for OAuth CSRF state (google_oauth_state).
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession();
+
+builder.Services.AddSingleton<ITokenStore, EncryptedFileTokenStore>();
 
 builder.Services.Configure<GoogleCalendarOptions>(builder.Configuration.GetSection("GoogleCalendar"));
 builder.Services.Configure<ReferenceAdminOptions>(builder.Configuration.GetSection("ReferenceAdmin"));
@@ -25,19 +36,31 @@ builder.Services.AddScoped<ITimetableParser, TimetableParser>();
 builder.Services.AddSingleton<IRosebankReferenceService, RosebankReferenceService>();
 builder.Services.AddScoped<IAcademicParser, AcademicParser>();
 builder.Services.AddScoped<IAssessmentParser, AssessmentParser>();
+builder.Services.AddScoped<IAiParsingService, AiParsingService>();
 builder.Services.AddScoped<IAcademicScheduleBuilder, AcademicScheduleBuilder>();
 builder.Services.AddScoped<IGoogleCalendarService, GoogleCalendarService>();
+builder.Services.AddScoped<IRosebankParserService, RosebankParserService>();
+// IHttpContextAccessor is no longer needed; tokens are stored by FileTokenStore.
 
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("frontend", policy =>
     {
-        policy.AllowAnyHeader().AllowAnyMethod().AllowAnyOrigin();
+        // Hardened CORS: Restrict to known frontend origins.
+        // In production, these should come from configuration.
+        policy.WithOrigins("http://localhost:3000", "http://localhost:5173", "https://localhost:7068")
+              .AllowAnyHeader()
+              .AllowAnyMethod();
     });
 });
 
 var app = builder.Build();
-var frontendPath = Path.GetFullPath(Path.Combine(app.Environment.ContentRootPath, "..", "frontend"));
+var frontendCandidates = new[]
+{
+    Path.GetFullPath(Path.Combine(app.Environment.ContentRootPath, "..", "frontend", "dist")),
+    Path.GetFullPath(Path.Combine(app.Environment.ContentRootPath, "..", "frontend"))
+};
+var frontendPath = frontendCandidates.FirstOrDefault(Directory.Exists);
 
 if (app.Environment.IsDevelopment())
 {
@@ -45,7 +68,11 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+if (!app.Environment.IsEnvironment("Testing"))
+{
+    app.UseHttpsRedirection();
+}
+
 app.UseCors("frontend");
 app.UseSession();
 if (Directory.Exists(frontendPath))
@@ -77,3 +104,5 @@ if (Directory.Exists(frontendPath))
 }
 
 app.Run();
+
+public partial class Program { }

@@ -4,8 +4,8 @@ namespace TimetableSync.Api.Services;
 
 public interface IGoogleCalendarService
 {
-    Task<SyncResponse> CreateWeeklyEventsAsync(SyncRequest request, CancellationToken cancellationToken);
-    Task<SyncResponse> CreateAssessmentEventsAsync(AssessmentSyncRequest request, CancellationToken cancellationToken);
-    Task<SyncResponse> CreateExamEventsAsync(ExamSyncRequest request, CancellationToken cancellationToken);
-    Task<CalendarDeleteResponse> DeleteManagedEventsAsync(CalendarDeleteRequest request, CancellationToken cancellationToken);
+    Task<SyncResponse> CreateWeeklyEventsAsync(string userId, SyncRequest request, CancellationToken cancellationToken);
+    Task<SyncResponse> CreateAssessmentEventsAsync(string userId, AssessmentSyncRequest request, CancellationToken cancellationToken);
+    Task<SyncResponse> CreateExamEventsAsync(string userId, ExamSyncRequest request, CancellationToken cancellationToken);
+    Task<CalendarDeleteResponse> DeleteManagedEventsAsync(string userId, CalendarDeleteRequest request, CancellationToken cancellationToken);
 }

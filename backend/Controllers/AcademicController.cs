@@ -11,45 +11,45 @@ public sealed class AcademicController : ControllerBase
     private readonly IPdfTextExtractor _extractor;
     private readonly IAcademicParser _parser;
     private readonly IGoogleCalendarService _calendar;
+    private readonly IAiParsingService _aiParser;
 
     public AcademicController(
         IPdfTextExtractor extractor,
         IAcademicParser parser,
-        IGoogleCalendarService calendar)
+        IGoogleCalendarService calendar,
+        IAiParsingService aiParser)
     {
         _extractor = extractor;
         _parser = parser;
         _calendar = calendar;
+        _aiParser = aiParser;
     }
 
+    /// <summary>
+    /// Parse a timetable PDF and get a preview of events.
+    /// Optionally use AI parsing for better accuracy with complex formats.
+    /// </summary>
     [HttpPost("preview")]
-    public async Task<IActionResult> Preview(
-        [FromForm] IFormFile file,
-        [FromForm] int year,
-        [FromForm] string group,
-        CancellationToken cancellationToken)
+    [Consumes("multipart/form-data")]
+    public IActionResult Preview()
     {
-        if (file is null)
-        {
-            return BadRequest("File is required.");
-        }
-
-        var text = await _extractor.ExtractAsync(file, cancellationToken);
-        var parsed = _parser.Parse(text, year, group ?? string.Empty);
-        return Ok(parsed);
+        return StatusCode(StatusCodes.Status410Gone, "Deprecated endpoint. Use POST /api/parser/rosebank.");
     }
 
     [HttpPost("sync")]
     public async Task<IActionResult> Sync([FromBody] AcademicSyncRequest request, CancellationToken cancellationToken)
     {
-        if (request.Events.Count == 0)
+        if (!Request.Cookies.TryGetValue("sync_user_id", out var userId) || string.IsNullOrWhiteSpace(userId))
         {
-            return BadRequest("At least one class event is required.");
+            return Unauthorized("Google account not connected. Open /oauth/google/start first.");
         }
+
+        if (request.Events.Count == 0)
+            return BadRequest("At least one class event is required.");
 
         try
         {
-            var response = await _calendar.CreateWeeklyEventsAsync(new SyncRequest
+            var response = await _calendar.CreateWeeklyEventsAsync(userId, new SyncRequest
             {
                 Events = request.Events,
                 SemesterEndDate = request.SemesterEndDate,

@@ -11,39 +11,35 @@ public sealed class AssessmentController : ControllerBase
     private readonly IPdfTextExtractor _extractor;
     private readonly IAssessmentParser _parser;
     private readonly IGoogleCalendarService _calendar;
+    private readonly IAiParsingService _aiParser;
 
     public AssessmentController(
         IPdfTextExtractor extractor,
         IAssessmentParser parser,
-        IGoogleCalendarService calendar)
+        IGoogleCalendarService calendar,
+        IAiParsingService aiParser)
     {
         _extractor = extractor;
         _parser = parser;
         _calendar = calendar;
+        _aiParser = aiParser;
     }
 
     [HttpPost("preview")]
-    public async Task<IActionResult> Preview(
-        [FromForm] IFormFile? file,
-        [FromForm] string? text,
-        CancellationToken cancellationToken)
+    [Consumes("multipart/form-data")]
+    public IActionResult Preview()
     {
-        if (file is null && string.IsNullOrWhiteSpace(text))
-        {
-            return BadRequest("Provide either a file or text.");
-        }
-
-        var extractedText = string.IsNullOrWhiteSpace(text)
-            ? await _extractor.ExtractAsync(file!, cancellationToken)
-            : text!;
-
-        var parsed = _parser.Parse(extractedText);
-        return Ok(parsed);
+        return StatusCode(StatusCodes.Status410Gone, "Deprecated endpoint. Use POST /api/parser/rosebank.");
     }
 
     [HttpPost("sync")]
     public async Task<IActionResult> Sync([FromBody] AssessmentSyncRequest request, CancellationToken cancellationToken)
     {
+        if (!Request.Cookies.TryGetValue("sync_user_id", out var userId) || string.IsNullOrWhiteSpace(userId))
+        {
+            return Unauthorized("Google account not connected. Open /oauth/google/start first.");
+        }
+
         if (request.Events.Count == 0)
         {
             return BadRequest("At least one assessment event is required.");
@@ -51,7 +47,7 @@ public sealed class AssessmentController : ControllerBase
 
         try
         {
-            var response = await _calendar.CreateAssessmentEventsAsync(request, cancellationToken);
+            var response = await _calendar.CreateAssessmentEventsAsync(userId, request, cancellationToken);
             return Ok(response);
         }
         catch (InvalidOperationException ex)
