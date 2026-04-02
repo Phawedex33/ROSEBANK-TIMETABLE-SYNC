@@ -66,6 +66,10 @@ public sealed class AssessmentParser : IAssessmentParser
         {
             response.Warnings.Add("No assessment rows matched. Check PDF extraction and try preview with cleaner text.");
         }
+        else
+        {
+            PruneLowerQualityDuplicates(response);
+        }
 
         return response;
     }
@@ -428,6 +432,93 @@ public sealed class AssessmentParser : IAssessmentParser
         reason = string.Empty;
         return false;
     }
+
+    private static void PruneLowerQualityDuplicates(AssessmentPreviewResponse response)
+    {
+        var ranked = response.Events
+            .Select((ev, index) => new RankedAssessmentEvent(ev, index, CalculateQualityScore(ev)))
+            .ToList();
+
+        var removeIndexes = new HashSet<int>();
+
+        foreach (var group in ranked.GroupBy(x => BuildSlotKey(x.Event)))
+        {
+            var bestScore = group.Max(x => x.Score);
+            var bestEvents = group.Where(x => x.Score == bestScore).ToList();
+            var hasSpecificEvent = bestEvents.Any(x => !IsGenericAssessmentType(x.Event.AssessmentType));
+
+            foreach (var candidate in group)
+            {
+                if (candidate.Score < bestScore)
+                {
+                    removeIndexes.Add(candidate.Index);
+                    response.Diagnostics.Add($"branch=quality_prune_skip key={BuildSlotKey(candidate.Event)} type={candidate.Event.AssessmentType}");
+                    continue;
+                }
+
+                if (hasSpecificEvent &&
+                    candidate.Score == bestScore &&
+                    IsGenericAssessmentType(candidate.Event.AssessmentType))
+                {
+                    removeIndexes.Add(candidate.Index);
+                    response.Diagnostics.Add($"branch=generic_prune_skip key={BuildSlotKey(candidate.Event)} type={candidate.Event.AssessmentType}");
+                }
+            }
+        }
+
+        if (removeIndexes.Count > 0)
+        {
+            response.Events = response.Events
+                .Where((_, index) => !removeIndexes.Contains(index))
+                .ToList();
+        }
+    }
+
+    private static string BuildSlotKey(AssessmentEvent ev)
+    {
+        return $"{ev.ModuleCode}|{ev.Date:yyyy-MM-dd}|{ev.Time:HH:mm}|{ev.Sitting}";
+    }
+
+    private static int CalculateQualityScore(AssessmentEvent ev)
+    {
+        var score = 0;
+        if (!string.IsNullOrWhiteSpace(ev.ModuleName)) score += 2;
+        if (!IsGenericAssessmentType(ev.AssessmentType))
+        {
+            score += 8;
+        }
+        else
+        {
+            score -= 5;
+        }
+        if (ev.AssessmentType.Contains("Deferred", StringComparison.OrdinalIgnoreCase)) score += 2;
+        if (ev.DeliveryMode.Contains("Online", StringComparison.OrdinalIgnoreCase) ||
+            ev.DeliveryMode.Contains("Campus", StringComparison.OrdinalIgnoreCase))
+        {
+            score += 1;
+        }
+
+        score += NormalizeAssessmentType(ev.AssessmentType).Length;
+        return score;
+    }
+
+    private static bool IsGenericAssessmentType(string value)
+    {
+        return NormalizeAssessmentType(value).Equals("assessment", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeAssessmentType(string value)
+    {
+        var normalized = NormalizeText(value).ToLowerInvariant();
+        normalized = Regex.Replace(normalized, "\\bdeferred\\b", string.Empty);
+        normalized = Regex.Replace(normalized, "\\bpractical\\b", string.Empty);
+        normalized = Regex.Replace(normalized, "\\btheory\\b", string.Empty);
+        normalized = Regex.Replace(normalized, "\\bfinal\\b", string.Empty);
+        normalized = Regex.Replace(normalized, "\\s+", " ").Trim();
+        return normalized;
+    }
+
+    private sealed record RankedAssessmentEvent(AssessmentEvent Event, int Index, int Score);
 
     private static string NormalizeText(string value)
     {

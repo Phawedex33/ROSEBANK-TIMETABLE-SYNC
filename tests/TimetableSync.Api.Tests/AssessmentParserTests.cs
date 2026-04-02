@@ -71,4 +71,20 @@ Replacement Resubmission Supplemental Exam 15-May-26 14:00";
             !e.ModuleName.Contains("DIS3", StringComparison.OrdinalIgnoreCase) &&
             !e.ModuleName.Contains("23:59", StringComparison.OrdinalIgnoreCase));
     }
+
+    [Fact]
+    public void Parse_PrunesLowerQualityDuplicateAssessmentRows_ForSameSlot()
+    {
+        var input = @"DIS3 XISD5319 Work Integrated Learning 3 A Task 1 Online Submission Turnitin 23-Apr-26 23:59
+XISD5319 Work Integrated Learning 3 A Task 1 23-Apr-26 23:59
+XISD5319 Work Integrated Learning 3 A Task 1 Assessment 23-Apr-26 23:59";
+
+        var result = _sut.Parse(input);
+
+        result.Events.Should().ContainSingle(e =>
+            e.ModuleCode == "XISD5319" &&
+            e.Date == new DateOnly(2026, 4, 23) &&
+            e.Time == new TimeOnly(23, 59));
+        result.Events[0].AssessmentType.Should().NotBe("Assessment");
+    }
 }

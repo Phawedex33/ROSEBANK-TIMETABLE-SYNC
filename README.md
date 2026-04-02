@@ -68,6 +68,11 @@ The backend serves `frontend/dist` automatically when that build output exists.
 - Frontend build: `cd frontend && npm run build`
 - Backend tests: `dotnet test tests/TimetableSync.Api.Tests/TimetableSync.Api.Tests.csproj`
 
+### CI
+- GitHub Actions workflow: [`.github/workflows/ci.yml`](/c:/Users/CASH/Desktop/ROSEBANK-TIMETABLE-SYNC/rosebank-timetable-sync/.github/workflows/ci.yml)
+- Frontend job runs `npm ci`, `npm run test`, and `npm run build`
+- Backend job runs `dotnet test tests/TimetableSync.Api.Tests/TimetableSync.Api.Tests.csproj`
+
 ### Notes
 - Assessment parsing now filters by selected year.
 - Suspicious merged OCR assessment rows are skipped instead of leaking into sync previews.

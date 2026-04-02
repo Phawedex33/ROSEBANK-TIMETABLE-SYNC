@@ -81,3 +81,16 @@ tests/TimetableSync.Api.Tests/test_output.txt
 backend/artifacts/
 backend/timetable-sync-token/
 backend/timetable-sync-keys/
+
+# Local experiments / alternate backend
+TestExtraction.cs
+backend/main.py
+backend/requirements.txt
+backend/routes/
+backend/Models/__init__.py
+backend/Models/schemas.py
+backend/Services/__init__.py
+backend/Services/AiParsingService.cs
+backend/Services/calendar_service.py
+backend/Services/gemini_service.py
+backend/Services/pdf_service.py
