@@ -1,5 +1,4 @@
 using Microsoft.Extensions.FileProviders;
-using Microsoft.AspNetCore.DataProtection;
 using System.Text.Json.Serialization;
 using TimetableSync.Api.Services;
 
@@ -12,22 +11,7 @@ builder.Services.AddControllers().AddJsonOptions(options =>
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-builder.Services.AddHttpClient();
 
-// Data protection persistence to survive restarts/replacements
-var keysPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TimetableSyncKeys");
-Directory.CreateDirectory(keysPath);
-builder.Services.AddDataProtection()
-    .PersistKeysToFileSystem(new DirectoryInfo(keysPath))
-    .SetApplicationName("TimetableSync")
-    .SetDefaultKeyLifetime(TimeSpan.FromDays(90));
-// Session is retained solely for OAuth CSRF state (google_oauth_state).
-builder.Services.AddDistributedMemoryCache();
-builder.Services.AddSession();
-
-builder.Services.AddSingleton<ITokenStore, EncryptedFileTokenStore>();
-
-builder.Services.Configure<GoogleCalendarOptions>(builder.Configuration.GetSection("GoogleCalendar"));
 builder.Services.Configure<ReferenceAdminOptions>(builder.Configuration.GetSection("ReferenceAdmin"));
 
 builder.Services.AddScoped<ITextExtractionService, TextExtractionService>();
@@ -38,9 +22,8 @@ builder.Services.AddScoped<IAcademicParser, AcademicParser>();
 builder.Services.AddScoped<IAssessmentParser, AssessmentParser>();
 builder.Services.AddScoped<IAiParsingService, AiParsingService>();
 builder.Services.AddScoped<IAcademicScheduleBuilder, AcademicScheduleBuilder>();
-builder.Services.AddScoped<IGoogleCalendarService, GoogleCalendarService>();
+builder.Services.AddScoped<ICalendarExportService, CalendarExportService>();
 builder.Services.AddScoped<IRosebankParserService, RosebankParserService>();
-// IHttpContextAccessor is no longer needed; tokens are stored by FileTokenStore.
 
 builder.Services.AddCors(options =>
 {
@@ -74,7 +57,6 @@ if (!app.Environment.IsEnvironment("Testing"))
 }
 
 app.UseCors("frontend");
-app.UseSession();
 if (Directory.Exists(frontendPath))
 {
     var provider = new PhysicalFileProvider(frontendPath);

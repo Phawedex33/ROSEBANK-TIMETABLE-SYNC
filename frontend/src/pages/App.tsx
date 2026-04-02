@@ -1,5 +1,5 @@
 import { AlertTriangle, Calendar, LoaderCircle } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { EventPreview } from '../components/EventPreview';
 import { FileUpload } from '../components/FileUpload';
 import { ModeSelector } from '../components/ModeSelector';
@@ -9,7 +9,6 @@ import { apiService } from '../services/api';
 import type {
   AcademicSyncPayload,
   AssessmentSyncPayload,
-  AuthStatus,
   DiagnosticRow,
   PreviewEvent,
   PreviewResponse,
@@ -122,6 +121,7 @@ function buildAcademicPayload(
 function buildAssessmentPayload(events: PreviewEvent[], timeZone: string): AssessmentSyncPayload {
   return {
     timeZone,
+    durationMinutes: 60,
     events: events
       .filter((event) => !!event.date)
       .map((event) => ({
@@ -149,19 +149,7 @@ export function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusText, setStatusText] = useState('Ready.');
-  const [auth, setAuth] = useState<AuthStatus>({
-    connected: false,
-    email: null,
-    expiresAtUtc: null,
-  });
   const [rawPreview, setRawPreview] = useState<RosebankParseResponse | null>(null);
-
-  useEffect(() => {
-    apiService
-      .getAuthStatus()
-      .then(setAuth)
-      .catch((responseError: Error) => setError(responseError.message));
-  }, []);
 
   const preview = useMemo(() => {
     if (!rawPreview) return null;
@@ -206,40 +194,42 @@ export function App() {
     }
   }
 
-  async function handleSync() {
+  function downloadCalendarFile(blob: Blob, prefix: string) {
+    // Use a temporary object URL so the browser can download the generated .ics file directly.
+    const fileUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = fileUrl;
+    link.download = `${prefix}-${mode}-${new Date().toISOString().slice(0, 10)}.ics`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(fileUrl);
+  }
+
+  async function handleExport() {
     if (!preview) return;
 
     setLoading(true);
     setError(null);
-    setStatusText('Syncing events to Google Calendar...');
+    setStatusText('Building calendar file...');
 
     try {
       if (mode === 'academic') {
         const payload = buildAcademicPayload(preview.events, year, group, timeZone, semesterEndDate, weeksDuration);
-        const response = await apiService.syncAcademic(payload);
-        setStatusText(`Academic sync finished. ${response.created ?? 0} events created.`);
+        const file = await apiService.exportAcademic(payload);
+        downloadCalendarFile(file, 'rosebank-academic');
+        setStatusText('Academic calendar file downloaded.');
       } else {
         const payload = buildAssessmentPayload(preview.events, timeZone);
-        const response = await apiService.syncAssessment(payload);
-        setStatusText(`Assessment sync finished. ${response.created ?? 0} events created.`);
+        const file = await apiService.exportAssessment(payload);
+        downloadCalendarFile(file, 'rosebank-assessment');
+        setStatusText('Assessment calendar file downloaded.');
       }
-
-      setAuth(await apiService.getAuthStatus());
     } catch (responseError) {
-      setError(responseError instanceof Error ? responseError.message : 'Sync failed.');
-      setStatusText('Sync failed.');
+      setError(responseError instanceof Error ? responseError.message : 'Export failed.');
+      setStatusText('Export failed.');
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function handleDisconnect() {
-    try {
-      await apiService.disconnectGoogle();
-      setAuth(await apiService.getAuthStatus());
-      setStatusText('Google session disconnected.');
-    } catch (responseError) {
-      setError(responseError instanceof Error ? responseError.message : 'Disconnect failed.');
     }
   }
 
@@ -256,7 +246,7 @@ export function App() {
                 <p className="chip">Frontend Modernized</p>
                 <h1 className="mt-3 text-3xl font-black tracking-tight md:text-4xl">Rosebank Timetable Sync</h1>
                 <p className="mt-2 max-w-2xl text-sm text-white/60 md:text-base">
-                  React, TypeScript, and TailwindCSS now drive the UI while the ASP.NET Core backend stays unchanged.
+                  Parse Rosebank timetables, review the results, and download a calendar file that imports cleanly into common calendar apps.
                 </p>
               </div>
             </div>
@@ -336,7 +326,6 @@ export function App() {
             {filteredPreview?.rows.length ? <ParserDiagnosticsPanel rows={filteredPreview.rows} /> : null}
 
             <SyncConfirmation
-              auth={auth}
               mode={mode}
               timeZone={timeZone}
               semesterEndDate={semesterEndDate}
@@ -346,14 +335,8 @@ export function App() {
               onTimeZoneChange={setTimeZone}
               onSemesterEndDateChange={setSemesterEndDate}
               onWeeksDurationChange={setWeeksDuration}
-              onConnect={() => {
-                window.location.href = '/oauth/google/start';
-              }}
-              onDisconnect={() => {
-                handleDisconnect().catch((responseError: Error) => setError(responseError.message));
-              }}
-              onSync={() => {
-                handleSync().catch((responseError: Error) => setError(responseError.message));
+              onExport={() => {
+                handleExport().catch((responseError: Error) => setError(responseError.message));
               }}
             />
 

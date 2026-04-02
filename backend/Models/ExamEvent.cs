@@ -1,5 +1,6 @@
 namespace TimetableSync.Api.Models;
 
+// This model stays because the parser and AI extraction pipeline still use it internally.
 public sealed class ExamEvent
 {
     public string ModuleCode { get; init; } = string.Empty;

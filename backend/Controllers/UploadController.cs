@@ -6,7 +6,7 @@ namespace TimetableSync.Api.Controllers;
 [Route("api/[controller]")]
 public sealed class UploadController : ControllerBase
 {
-    private const string Message = "Deprecated endpoint. Use POST /api/parser/rosebank for parsing and /api/academic/sync or /api/assessment/sync for calendar sync.";
+    private const string Message = "Deprecated endpoint. Use POST /api/parser/rosebank for parsing and /api/academic/export or /api/assessment/export for calendar export.";
 
     [HttpPost("preview")]
     public IActionResult Preview() => StatusCode(StatusCodes.Status410Gone, Message);

@@ -127,15 +127,5 @@ export interface AssessmentEvent {
 export interface AssessmentSyncPayload {
   events: AssessmentEvent[];
   timeZone: string;
-}
-
-export interface SyncResponse {
-  created?: number;
-  eventIds?: string[];
-}
-
-export interface AuthStatus {
-  connected: boolean;
-  email: string | null;
-  expiresAtUtc: string | null;
+  durationMinutes?: number;
 }

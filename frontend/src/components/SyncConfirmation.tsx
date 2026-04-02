@@ -1,8 +1,7 @@
-import { CalendarSync, Link2, Unlink } from 'lucide-react';
-import type { AuthStatus, TimetableMode } from '../types';
+import { Calendar, Download } from 'lucide-react';
+import type { TimetableMode } from '../types';
 
 interface SyncConfirmationProps {
-  auth: AuthStatus;
   mode: TimetableMode;
   timeZone: string;
   semesterEndDate: string;
@@ -11,14 +10,11 @@ interface SyncConfirmationProps {
   onTimeZoneChange: (value: string) => void;
   onSemesterEndDateChange: (value: string) => void;
   onWeeksDurationChange: (value: number) => void;
-  onConnect: () => void;
-  onDisconnect: () => void;
-  onSync: () => void;
+  onExport: () => void;
   disabled?: boolean;
 }
 
 export function SyncConfirmation({
-  auth,
   mode,
   timeZone,
   semesterEndDate,
@@ -27,44 +23,30 @@ export function SyncConfirmation({
   onTimeZoneChange,
   onSemesterEndDateChange,
   onWeeksDurationChange,
-  onConnect,
-  onDisconnect,
-  onSync,
+  onExport,
   disabled = false,
 }: SyncConfirmationProps) {
   return (
     <div className="panel p-6">
       <div className="mb-5">
-        <p className="chip">Sync</p>
-        <h3 className="mt-3 text-xl font-bold">Google Calendar handoff</h3>
+        <p className="chip">Export</p>
+        <h3 className="mt-3 text-xl font-bold">Calendar file download</h3>
         <p className="mt-2 text-sm text-white/60">
-          Connect Google, confirm timezone settings, then create the calendar events from the parsed preview.
+          Generate an `.ics` file from the parsed preview, then import it into Google Calendar, Apple Calendar, or your phone.
         </p>
       </div>
 
       <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="text-sm font-semibold">
-              {auth.connected ? 'Google Calendar connected' : 'Google Calendar not connected'}
-            </div>
+            <div className="text-sm font-semibold">No Google sign-in required</div>
             <div className="mt-1 text-sm text-white/55">
-              {auth.connected
-                ? auth.email ?? 'A valid session cookie is active for calendar sync.'
-                : 'Use the OAuth flow before syncing events.'}
+              The exported calendar file keeps this flow safe for a public repo while still working with common calendar apps.
             </div>
           </div>
-          {auth.connected ? (
-            <button type="button" className="button-secondary" onClick={onDisconnect} disabled={loading}>
-              <Unlink size={16} />
-              Disconnect
-            </button>
-          ) : (
-            <button type="button" className="button-secondary" onClick={onConnect} disabled={loading}>
-              <Link2 size={16} />
-              Connect Google
-            </button>
-          )}
+          <div className="rounded-2xl border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-sm text-emerald-100">
+            .ics export enabled
+          </div>
         </div>
       </div>
 
@@ -109,11 +91,11 @@ export function SyncConfirmation({
       <button
         type="button"
         className="button-primary mt-6 w-full"
-        disabled={disabled || loading || !auth.connected}
-        onClick={onSync}
+        disabled={disabled || loading}
+        onClick={onExport}
       >
-        <CalendarSync size={18} />
-        {loading ? 'Syncing...' : 'Sync to Google Calendar'}
+        {mode === 'academic' ? <Calendar size={18} /> : <Download size={18} />}
+        {loading ? 'Preparing file...' : 'Download Calendar (.ics)'}
       </button>
     </div>
   );

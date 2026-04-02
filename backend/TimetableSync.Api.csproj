@@ -6,8 +6,6 @@
     <UserSecretsId>9c79c667-c5b2-4688-9c5f-aa82550dbd9f</UserSecretsId>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Google.Apis.Calendar.v3" Version="1.68.0.3402" />
-    <PackageReference Include="Google.Apis.Auth" Version="1.68.0" />
     <PackageReference Include="UglyToad.PdfPig" Version="1.7.0-custom-5" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
   </ItemGroup>

@@ -1,9 +1,7 @@
 import type {
   AcademicSyncPayload,
   AssessmentSyncPayload,
-  AuthStatus,
   RosebankParseResponse,
-  SyncResponse,
 } from '../types';
 
 const API_BASE = '/api';
@@ -39,35 +37,31 @@ export const apiService = {
     return readResponse<RosebankParseResponse>(response);
   },
 
-  async syncAcademic(payload: AcademicSyncPayload): Promise<SyncResponse> {
-    const response = await fetch(`${API_BASE}/academic/sync`, {
+  async exportAcademic(payload: AcademicSyncPayload): Promise<Blob> {
+    const response = await fetch(`${API_BASE}/academic/export`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
 
-    return readResponse<SyncResponse>(response);
-  },
-
-  async syncAssessment(payload: AssessmentSyncPayload): Promise<SyncResponse> {
-    const response = await fetch(`${API_BASE}/assessment/sync`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-
-    return readResponse<SyncResponse>(response);
-  },
-
-  async getAuthStatus(): Promise<AuthStatus> {
-    const response = await fetch('/oauth/google/status');
-    return readResponse<AuthStatus>(response);
-  },
-
-  async disconnectGoogle(): Promise<void> {
-    const response = await fetch('/oauth/google/disconnect', { method: 'POST' });
     if (!response.ok) {
       throw new Error(await response.text());
     }
+
+    return response.blob();
+  },
+
+  async exportAssessment(payload: AssessmentSyncPayload): Promise<Blob> {
+    const response = await fetch(`${API_BASE}/assessment/export`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+
+    return response.blob();
   },
 };

@@ -4,6 +4,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using TimetableSync.Api.Models;
 using Xunit;
 
 namespace TimetableSync.Api.Tests;
@@ -120,6 +121,70 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>
             "DATA6211", "ISEC6321", "PROG6221", "SAND6221"
         };
         assessmentEvents.Select(x => x.GetProperty("subject_code").GetString()).All(code => code is not null && allowedDis2.Contains(code)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Post_AcademicExport_ReturnsCalendarFile()
+    {
+        var client = _factory.CreateClient();
+        var request = new AcademicSyncRequest
+        {
+            Group = "GR1",
+            TimeZone = "Africa/Johannesburg",
+            WeeksDuration = 2,
+            Events =
+            {
+                new ClassEvent
+                {
+                    Day = DayOfWeek.Monday,
+                    StartTime = new TimeOnly(9, 0),
+                    EndTime = new TimeOnly(10, 0),
+                    Subject = "Programming 3",
+                    Lecturer = "Ms Example",
+                    Venue = "Lab 2"
+                }
+            }
+        };
+
+        var response = await client.PostAsJsonAsync("/api/academic/export", request);
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("text/calendar");
+        body.Should().Contain("BEGIN:VCALENDAR");
+        body.Should().Contain("SUMMARY:[CLASS] Programming 3");
+        body.Should().Contain("RRULE:FREQ=WEEKLY");
+    }
+
+    [Fact]
+    public async Task Post_AssessmentExport_ReturnsCalendarFile()
+    {
+        var client = _factory.CreateClient();
+        var request = new AssessmentSyncRequest
+        {
+            TimeZone = "Africa/Johannesburg",
+            Events =
+            {
+                new AssessmentEvent
+                {
+                    ModuleCode = "XISD5319",
+                    ModuleName = "UX Design",
+                    AssessmentType = "Task 1",
+                    Date = new DateOnly(2026, 4, 23),
+                    Time = new TimeOnly(9, 0),
+                    DeliveryMode = "Online"
+                }
+            }
+        };
+
+        var response = await client.PostAsJsonAsync("/api/assessment/export", request);
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("text/calendar");
+        body.Should().Contain("BEGIN:VCALENDAR");
+        body.Should().Contain("SUMMARY:[ASSESSMENT] XISD5319 - UX Design (Task 1)");
+        body.Should().Contain("DTSTART;TZID=Africa/Johannesburg:20260423T090000");
     }
 
     private static string FindExamplePdf(string folderName, string nameContains)
