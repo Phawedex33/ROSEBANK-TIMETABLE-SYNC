@@ -90,7 +90,6 @@ backend/routes/
 backend/Models/__init__.py
 backend/Models/schemas.py
 backend/Services/__init__.py
-backend/Services/AiParsingService.cs
 backend/Services/calendar_service.py
 backend/Services/gemini_service.py
 backend/Services/pdf_service.py
