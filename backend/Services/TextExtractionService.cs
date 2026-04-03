@@ -34,28 +34,26 @@ public sealed class TextExtractionService : ITextExtractionService
             await stream.CopyToAsync(memory, cancellationToken);
             memory.Position = 0;
 
-            string text;
+            string pdfPigText;
             try
             {
-                text = ExtractTextWithPdfPig(memory.ToArray());
+                pdfPigText = ExtractTextWithPdfPig(memory.ToArray());
             }
             catch
             {
-                text = string.Empty;
+                pdfPigText = string.Empty;
             }
+
+            var streamText = ExtractTextFromPdfBytes(memory.ToArray());
+            var text = MergePdfExtractions(pdfPigText, streamText);
 
             if (string.IsNullOrWhiteSpace(text))
             {
-                text = ExtractTextFromPdfBytes(memory.ToArray());
+                _logger.LogInformation("PDF appears to have no selectable text.");
+                throw new InvalidOperationException("Scanned PDF detected with no selectable text. Convert page to image (PNG/JPG) and upload, or add a PDF-to-image OCR pipeline.");
             }
 
-            if (!string.IsNullOrWhiteSpace(text))
-            {
-                return text;
-            }
-
-            _logger.LogInformation("PDF appears to have no selectable text.");
-            throw new InvalidOperationException("Scanned PDF detected with no selectable text. Convert page to image (PNG/JPG) and upload, or add a PDF-to-image OCR pipeline.");
+            return text;
         }
 
         if (extension is ".png" or ".jpg" or ".jpeg")
@@ -220,6 +218,38 @@ public sealed class TextExtractionService : ITextExtractionService
             .ToList();
 
         return string.Join(Environment.NewLine, cleaned);
+    }
+
+    private static string MergePdfExtractions(string primary, string secondary)
+    {
+        var merged = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var line in SplitLines(primary))
+        {
+            if (seen.Add(line))
+            {
+                merged.Add(line);
+            }
+        }
+
+        foreach (var line in SplitLines(secondary))
+        {
+            if (seen.Add(line))
+            {
+                merged.Add(line);
+            }
+        }
+
+        return string.Join(Environment.NewLine, merged);
+    }
+
+    private static IEnumerable<string> SplitLines(string input)
+    {
+        return (input ?? string.Empty)
+            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(line => Regex.Replace(line, @"\s+", " ").Trim())
+            .Where(line => !string.IsNullOrWhiteSpace(line));
     }
 
     private static string ExtractTextWithPdfPig(byte[] pdfBytes)

@@ -1,5 +1,6 @@
 import { FileText, Upload } from 'lucide-react';
 import { useId, useState } from 'react';
+import type { TimetableMode } from '../types';
 
 interface FileDropProps {
   label: string;
@@ -79,6 +80,7 @@ function FileDrop({
 }
 
 interface FileUploadProps {
+  mode: TimetableMode;
   classFile: File | null;
   assessmentFile: File | null;
   onClassFileSelect: (file: File) => void;
@@ -87,19 +89,25 @@ interface FileUploadProps {
 }
 
 export function FileUpload({
+  mode,
   classFile,
   assessmentFile,
   onClassFileSelect,
   onAssessmentFileSelect,
   disabled = false,
 }: FileUploadProps) {
+  const classRequired = mode === 'academic';
+  const assessmentRequired = mode === 'assessment';
+
   return (
     <div className="panel p-6">
       <div className="mb-5">
         <p className="chip">Upload</p>
         <h2 className="mt-3 text-2xl font-bold">Load your Rosebank source files</h2>
         <p className="mt-2 text-sm text-white/60">
-          The parser expects the class timetable PDF and can optionally enrich the result with the PAS assessment PDF.
+          {mode === 'academic'
+            ? 'Academic mode needs the class timetable PDF and can optionally enrich the result with the PAS assessment PDF.'
+            : 'Assessment mode only needs the PAS assessment PDF for the selected student year.'}
         </p>
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
@@ -108,14 +116,15 @@ export function FileUpload({
           hint="Use the class timetable export for your year and group."
           file={classFile}
           onFileSelect={onClassFileSelect}
-          required
+          required={classRequired}
           disabled={disabled}
         />
         <FileDrop
           label="Assessment PDF"
-          hint="Optional, but recommended for the assessment sync flow."
+          hint={mode === 'assessment' ? 'Required for assessment parsing and export.' : 'Optional, but useful for assessment export too.'}
           file={assessmentFile}
           onFileSelect={onAssessmentFileSelect}
+          required={assessmentRequired}
           disabled={disabled}
         />
       </div>

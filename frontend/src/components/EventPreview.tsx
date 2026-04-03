@@ -53,6 +53,11 @@ export function EventPreview({ mode, events, filterText, onFilterChange }: Event
                       <CalendarDays size={15} />
                       {event.day ? `${event.day} ${event.startTime} - ${event.endTime}` : `${event.date} ${event.startTime}`}
                     </span>
+                    {event.deliveryMode && (
+                      <span className="inline-flex items-center gap-2">
+                        {event.deliveryMode}
+                      </span>
+                    )}
                     {event.location && (
                       <span className="inline-flex items-center gap-2">
                         <MapPin size={15} />

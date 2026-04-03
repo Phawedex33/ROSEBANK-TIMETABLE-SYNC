@@ -1,4 +1,5 @@
 using FluentAssertions;
+using TimetableSync.Api.Models;
 using TimetableSync.Api.Services;
 using Xunit;
 
@@ -52,7 +53,7 @@ public class AssessmentParserTests
     }
 
     [Fact]
-    public void Parse_SkipsGarbledMergedModuleBlocks()
+    public void Parse_SalvagesMergedModuleBlocks_WithoutLeakingOtherCodesIntoNames()
     {
         var input = @"OPSC6311 Open Source Coding (Introduction) Part 1 Online Submission Turnitin 24-Mar-26 23:59
 DIS3 OPSC6311 Open Source Coding (Introduction) Part 2 Online Submission Turnitin 28-Apr-26 23:59
@@ -64,6 +65,12 @@ Replacement Resubmission Supplemental Exam 15-May-26 14:00";
         var result = _sut.Parse(input);
 
         result.Events.Should().NotBeEmpty();
+        result.Events.Should().Contain(e => e.ModuleCode == "OPSC6311");
+        result.Events.Should().Contain(e => e.ModuleCode == "WEDE6021");
+        result.Events.Should().Contain(e => e.ModuleCode == "OPSC6311" && e.AssessmentType == "Part 1");
+        result.Events.Should().Contain(e => e.ModuleCode == "OPSC6311" && e.AssessmentType == "Part 2");
+        result.Events.Should().Contain(e => e.ModuleCode == "WEDE6021" && e.AssessmentType == "Part 1");
+        result.Events.Should().Contain(e => e.ModuleCode == "WEDE6021" && e.AssessmentType == "Part 2");
         result.Events.Should().NotContain(e =>
             e.ModuleCode == "OPSC6311" &&
             e.ModuleName.Contains("WEDE6021", StringComparison.OrdinalIgnoreCase));
@@ -86,5 +93,70 @@ XISD5319 Work Integrated Learning 3 A Task 1 Assessment 23-Apr-26 23:59";
             e.Date == new DateOnly(2026, 4, 23) &&
             e.Time == new TimeOnly(23, 59));
         result.Events[0].AssessmentType.Should().NotBe("Assessment");
+    }
+
+    [Fact]
+    public void Parse_ModuleBlockFallback_PreservesDeferredAssessmentType_PerDateContext()
+    {
+        var input = @"XISD5319 Work Integrated Learning 3 A
+Task 1 Online Submission 23-Apr-26 23:59
+Task 1 Deferred Online Submission 30-Apr-26 23:59";
+
+        var result = _sut.Parse(input);
+
+        result.Events.Should().HaveCount(2);
+        result.Events.Should().Contain(e =>
+            e.Date == new DateOnly(2026, 4, 23) &&
+            e.AssessmentType == "Task 1");
+        result.Events.Should().Contain(e =>
+            e.Date == new DateOnly(2026, 4, 30) &&
+            e.AssessmentType == "Task 1 Deferred");
+    }
+
+    [Fact]
+    public void Parse_ModuleBlockFallback_MapsReplacementResubmissionSection_ToDeferredEvent()
+    {
+        var input = @"XISD5319 Work Integrated Learning 3 A
+Task 1 Online Submission 23-Apr-26 23:59
+Replacement Resubmission Supplemental 15-May-26 14:00";
+
+        var result = _sut.Parse(input);
+
+        result.Events.Should().Contain(e =>
+            e.Date == new DateOnly(2026, 5, 15) &&
+            e.AssessmentType == "Task 1 Deferred");
+    }
+
+    [Fact]
+    public void Parse_MainAttempt_ExcludesDeferredRows()
+    {
+        var input = @"XISD5319 Work Integrated Learning 3 A
+Task 1 Online Submission 23-Apr-26 23:59
+Replacement Resubmission Supplemental 15-May-26 14:00";
+
+        var result = _sut.Parse(input, new AssessmentParseOptions
+        {
+            Attempt = "main"
+        });
+
+        result.Events.Should().ContainSingle();
+        result.Events[0].AssessmentType.Should().Be("Task 1");
+    }
+
+    [Fact]
+    public void Parse_SupplementaryAttempt_OnlyReturnsDeferredRows()
+    {
+        var input = @"XISD5319 Work Integrated Learning 3 A
+Task 1 Online Submission 23-Apr-26 23:59
+Replacement Resubmission Supplemental 15-May-26 14:00";
+
+        var result = _sut.Parse(input, new AssessmentParseOptions
+        {
+            Attempt = "supplementary"
+        });
+
+        result.Events.Should().ContainSingle();
+        result.Events[0].AssessmentType.Should().Be("Task 1 Deferred");
+        result.Events[0].Date.Should().Be(new DateOnly(2026, 5, 15));
     }
 }

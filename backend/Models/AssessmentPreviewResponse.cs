@@ -7,3 +7,8 @@ public sealed class AssessmentPreviewResponse
     public List<string> Warnings { get; init; } = new();
     public List<string> Diagnostics { get; init; } = new();
 }
+
+public sealed class AssessmentParseOptions
+{
+    public string Attempt { get; init; } = "all";
+}

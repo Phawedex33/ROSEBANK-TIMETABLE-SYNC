@@ -4,5 +4,5 @@ namespace TimetableSync.Api.Services;
 
 public interface IAssessmentParser
 {
-    AssessmentPreviewResponse Parse(string input);
+    AssessmentPreviewResponse Parse(string input, AssessmentParseOptions? options = null);
 }

@@ -80,11 +80,23 @@ public sealed class RosebankParserService : IRosebankParserService
         }
 
         var studentYear = request.StudentYear!.Trim().ToUpperInvariant();
-        var studentGroup = request.StudentGroup!.Trim().ToUpperInvariant();
+        var studentGroup = request.StudentGroup?.Trim().ToUpperInvariant() ?? string.Empty;
         var warnings = new List<RosebankWarning>();
-
-        var classText = await _extractor.ExtractAsync(request.ClassSchedulePdf!, cancellationToken);
-        var classParse = ParseClassSchedule(classText, studentYear, studentGroup, warnings, _referenceService);
+        var classParse = (Events: new List<RosebankClassEvent>(), GeneratedDate: (string?)null);
+        if (request.ClassSchedulePdf is null)
+        {
+            warnings.Add(new RosebankWarning
+            {
+                EventId = null,
+                Issue = "Class schedule PDF was not uploaded. Returned assessment schedule only.",
+                Severity = "info"
+            });
+        }
+        else
+        {
+            var classText = await _extractor.ExtractAsync(request.ClassSchedulePdf, cancellationToken);
+            classParse = ParseClassSchedule(classText, studentYear, studentGroup, warnings, _referenceService);
+        }
 
         List<RosebankAssessmentEvent> assessmentEvents = new();
         if (request.AssessmentSchedulePdf is null)
@@ -99,7 +111,11 @@ public sealed class RosebankParserService : IRosebankParserService
         else
         {
             var assessmentText = await _extractor.ExtractAsync(request.AssessmentSchedulePdf, cancellationToken);
-            var assessmentParse = _assessmentParser.Parse(assessmentText);
+            assessmentText = NormalizeAssessmentTextForYear(assessmentText, studentYear);
+            var assessmentParse = _assessmentParser.Parse(assessmentText, new AssessmentParseOptions
+            {
+                Attempt = string.IsNullOrWhiteSpace(request.AssessmentAttempt) ? "main" : request.AssessmentAttempt.Trim()
+            });
             
             // Add parser warnings to main list
             foreach (var w in assessmentParse.Warnings)
@@ -107,26 +123,31 @@ public sealed class RosebankParserService : IRosebankParserService
                 warnings.Add(new RosebankWarning { Issue = w, Severity = "warning" });
             }
 
-            // Map AssessmentEvent to RosebankAssessmentEvent
-            var yearMap = SubjectNameMap.TryGetValue(studentYear, out var map) ? map : new Dictionary<string, string>();
-            var allowedSubjectCodes = new HashSet<string>(yearMap.Keys, StringComparer.OrdinalIgnoreCase);
+            // Create a combined map of all known subjects across all years
+            var allSubjectsMap = SubjectNameMap.SelectMany(kvp => kvp.Value)
+                .GroupBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First().Value, StringComparer.OrdinalIgnoreCase);
+
+            var tempEvents = new List<RosebankAssessmentEvent>();
             for (int i = 0; i < assessmentParse.Events.Count; i++)
             {
                 var ev = assessmentParse.Events[i];
-                if (allowedSubjectCodes.Count > 0 && !allowedSubjectCodes.Contains(ev.ModuleCode))
+                // Use all subjects for remapping so we don't lose repeated modules
+                ev = RemapAssessmentEventForYear(ev, allSubjectsMap);
+                
+                if (allSubjectsMap.Count > 0 && !allSubjectsMap.ContainsKey(ev.ModuleCode))
                 {
+                    // If it is completely unrecognized, skip it (but log a warning)
                     warnings.Add(new RosebankWarning
                     {
                         EventId = null,
-                        Issue = $"Skipped assessment '{ev.ModuleCode}' because it does not match {studentYear}.",
+                        Issue = $"Skipped assessment '{ev.ModuleCode}' because it is not a recognized subject.",
                         Severity = "info"
                     });
                     continue;
                 }
 
-                var subjectName = string.IsNullOrWhiteSpace(ev.ModuleName)
-                    ? (yearMap.TryGetValue(ev.ModuleCode, out var mapped) ? mapped : null)
-                    : ev.ModuleName;
+                var subjectName = allSubjectsMap.TryGetValue(ev.ModuleCode, out var mapped) ? mapped : ev.ModuleName;
 
                 var isOnline = ev.DeliveryMode.Contains("Online", StringComparison.OrdinalIgnoreCase);
                 var submissionType = isOnline ? "online" : "campus_sitting";
@@ -134,7 +155,7 @@ public sealed class RosebankParserService : IRosebankParserService
                     ? new List<string> { "48hrs_before", "24hrs_before", "2hrs_before" }
                     : new List<string> { "24hrs_before", "2hrs_before" };
 
-                assessmentEvents.Add(new RosebankAssessmentEvent
+                tempEvents.Add(new RosebankAssessmentEvent
                 {
                     Id = $"asm_{i + 1:000}",
                     SubjectCode = ev.ModuleCode,
@@ -150,6 +171,9 @@ public sealed class RosebankParserService : IRosebankParserService
                     Notes = null
                 });
             }
+
+            // Apply Validation Pipeline
+            assessmentEvents = ApplyValidationPipeline(tempEvents, warnings);
         }
 
         var uniqueSubjects = classParse.Events
@@ -166,11 +190,18 @@ public sealed class RosebankParserService : IRosebankParserService
             .OrderBy(d => d, StringComparer.Ordinal)
             .ToList();
 
+        var resultDict = new Dictionary<string, Dictionary<string, string>>();
+        foreach (var kvp in SubjectNameMap)
+        {
+            resultDict[kvp.Key] = kvp.Value.ToDictionary(x => x.Key, x => x.Value);
+        }
+
         var response = new RosebankParseResponse
         {
             ParsedAt = DateTimeOffset.UtcNow.ToString("O"),
             StudentYear = studentYear,
             StudentGroup = studentGroup,
+            AvailableModules = resultDict,
             Schedules = new RosebankSchedules
             {
                 ClassSchedule = new RosebankClassSchedule
@@ -205,6 +236,83 @@ public sealed class RosebankParserService : IRosebankParserService
         return response;
     }
 
+    private static List<RosebankAssessmentEvent> ApplyValidationPipeline(List<RosebankAssessmentEvent> events, List<RosebankWarning> warnings)
+    {
+        var validated = new List<RosebankAssessmentEvent>();
+        
+        // Group by Module + Date strictly
+        var groupedByModuleDate = events.GroupBy(e => $"{e.SubjectCode}|{e.SpecificDate}").ToList();
+        
+        foreach (var group in groupedByModuleDate)
+        {
+            // Pick the items that have the strongest AssessmentType
+            var ordered = group
+                .OrderByDescending(x => !string.Equals(x.DueTime, "09:00") && !string.Equals(x.DueTime, "23:59")) // Prefer explicitly parsed specific times
+                .ThenByDescending(x => x.AssessmentType.Length)
+                .ToList();
+
+            var keepList = new List<RosebankAssessmentEvent>();
+
+            foreach (var candidate in ordered)
+            {
+                var isDuplicate = false;
+                foreach (var kept in keepList)
+                {
+                    if (kept.AssessmentType.Contains(candidate.AssessmentType, StringComparison.OrdinalIgnoreCase) ||
+                        candidate.AssessmentType.Contains(kept.AssessmentType, StringComparison.OrdinalIgnoreCase) ||
+                        candidate.AssessmentType.Replace(" ", "").Equals(kept.AssessmentType.Replace(" ", ""), StringComparison.OrdinalIgnoreCase))
+                    {
+                        isDuplicate = true;
+                        
+                        warnings.Add(new RosebankWarning
+                        {
+                            EventId = candidate.Id,
+                            Issue = $"Removed duplicate/incomplete assessment '{candidate.AssessmentType}' (kept '{kept.AssessmentType}').",
+                            Severity = "info"
+                        });
+                        break;
+                    }
+                }
+
+                if (!isDuplicate)
+                {
+                    keepList.Add(candidate);
+                }
+            }
+
+            validated.AddRange(keepList);
+        }
+
+        foreach (var ev in validated)
+        {
+            if (ev.SubmissionType == "online" && (ev.DueTime == "09:00" || ev.DueTime == "08:00"))
+            {
+                ev.Confidence = "low";
+                ev.Notes = string.IsNullOrWhiteSpace(ev.Notes) ? "Suspicious time for online submission." : ev.Notes + " Suspicious time for online submission.";
+            }
+            else if (ev.SubmissionType == "campus_sitting" && !ev.AssessmentType.Contains("test", StringComparison.OrdinalIgnoreCase) && !ev.AssessmentType.Contains("exam", StringComparison.OrdinalIgnoreCase) && !ev.AssessmentType.Contains("sitting", StringComparison.OrdinalIgnoreCase))
+            {
+                ev.Confidence = "low";
+                ev.Notes = string.IsNullOrWhiteSpace(ev.Notes) ? "Campus sitting without clear test/exam indication." : ev.Notes + " Campus sitting without clear test/exam indication.";
+            }
+
+            if (ev.AssessmentType.EndsWith("(In") || ev.AssessmentType.EndsWith("(P") || ev.AssessmentType.EndsWith("(Pr") || (ev.SubjectName != null && ev.SubjectName.EndsWith("(In")))
+            {
+                ev.Confidence = "low";
+                ev.Notes = string.IsNullOrWhiteSpace(ev.Notes) ? "Appears truncated." : ev.Notes + " Appears truncated.";
+            }
+            
+            if (ev.AssessmentType.Equals("Assessment", StringComparison.OrdinalIgnoreCase))
+            {
+                ev.Notes = string.IsNullOrWhiteSpace(ev.Notes) ? "Generic label." : ev.Notes + " Generic label.";
+            }
+        }
+
+        validated.RemoveAll(x => string.IsNullOrWhiteSpace(x.AssessmentType) || x.AssessmentType.Equals("Assessment", StringComparison.OrdinalIgnoreCase));
+
+        return validated.OrderBy(e => e.SpecificDate).ThenBy(e => e.DueTime).ToList();
+    }
+
     private static List<string> ValidateRequest(RosebankParseRequest request)
     {
         var missing = new List<string>();
@@ -216,17 +324,63 @@ public sealed class RosebankParserService : IRosebankParserService
             missing.Add("student_year");
         }
 
-        if (string.IsNullOrWhiteSpace(request.StudentGroup) || !validGroups.Contains(request.StudentGroup))
+        if (request.ClassSchedulePdf is not null &&
+            (string.IsNullOrWhiteSpace(request.StudentGroup) || !validGroups.Contains(request.StudentGroup)))
         {
             missing.Add("student_group");
         }
 
-        if (request.ClassSchedulePdf is null)
+        if (request.ClassSchedulePdf is null && request.AssessmentSchedulePdf is null)
         {
             missing.Add("class_schedule_pdf");
+            missing.Add("assessment_schedule_pdf");
         }
 
         return missing;
+    }
+
+    private static AssessmentEvent RemapAssessmentEventForYear(AssessmentEvent ev, IReadOnlyDictionary<string, string> yearMap)
+    {
+        if (yearMap.Count == 0 || yearMap.ContainsKey(ev.ModuleCode))
+        {
+            return ev;
+        }
+
+        foreach (var pair in yearMap)
+        {
+            if (!ModuleNameLooksLike(ev.ModuleName, pair.Value))
+            {
+                continue;
+            }
+
+            return new AssessmentEvent
+            {
+                ModuleCode = pair.Key,
+                ModuleName = pair.Value,
+                AssessmentType = ev.AssessmentType,
+                Sitting = ev.Sitting,
+                Date = ev.Date,
+                Time = ev.Time,
+                DeliveryMode = ev.DeliveryMode
+            };
+        }
+
+        return ev;
+    }
+
+    private static bool ModuleNameLooksLike(string actualName, string expectedName)
+    {
+        var normalizedActual = NormalizeModuleName(actualName);
+        var normalizedExpected = NormalizeModuleName(expectedName);
+        return normalizedActual.Contains(normalizedExpected, StringComparison.OrdinalIgnoreCase) ||
+               normalizedExpected.Contains(normalizedActual, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeModuleName(string value)
+    {
+        var normalized = Regex.Replace(value ?? string.Empty, "[^A-Za-z0-9]+", " ").Trim().ToLowerInvariant();
+        normalized = Regex.Replace(normalized, "\\b(introduction|intermediate|practical|deferred)\\b", string.Empty);
+        return Regex.Replace(normalized, "\\s+", " ").Trim();
     }
 
     private static int DaySort(string day)
@@ -241,6 +395,51 @@ public sealed class RosebankParserService : IRosebankParserService
             "Saturday" => 6,
             _ => 9
         };
+    }
+
+    private static string NormalizeAssessmentTextForYear(string assessmentText, string studentYear)
+    {
+        if (!SubjectNameMap.TryGetValue(studentYear, out var yearMap) || string.IsNullOrWhiteSpace(assessmentText))
+        {
+            return assessmentText;
+        }
+
+        var normalized = assessmentText;
+        foreach (var pair in yearMap.OrderByDescending(x => x.Value.Length))
+        {
+            normalized = EnsureModuleCodeNearModuleName(normalized, pair.Key, pair.Value);
+        }
+
+        return normalized;
+    }
+
+    private static string EnsureModuleCodeNearModuleName(string input, string moduleCode, string moduleName)
+    {
+        var output = input;
+        var searchIndex = 0;
+        while (searchIndex < output.Length)
+        {
+            var matchIndex = output.IndexOf(moduleName, searchIndex, StringComparison.OrdinalIgnoreCase);
+            if (matchIndex < 0)
+            {
+                break;
+            }
+
+            var prefixStart = Math.Max(0, matchIndex - 24);
+            var prefix = output.Substring(prefixStart, matchIndex - prefixStart);
+            if (!prefix.Contains(moduleCode, StringComparison.OrdinalIgnoreCase))
+            {
+                // Some PDFs lose the module code but keep the full title, so inject the known code to help downstream parsing.
+                output = output.Insert(matchIndex, $"{moduleCode} ");
+                searchIndex = matchIndex + moduleCode.Length + 1 + moduleName.Length;
+            }
+            else
+            {
+                searchIndex = matchIndex + moduleName.Length;
+            }
+        }
+
+        return output;
     }
 
     private static (List<RosebankClassEvent> Events, string? GeneratedDate) ParseClassSchedule(

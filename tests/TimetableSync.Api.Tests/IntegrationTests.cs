@@ -32,8 +32,8 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>
 
         var payload = await response.Content.ReadAsStringAsync();
         payload.Should().Contain("missing_fields");
-        payload.Should().Contain("student_group");
         payload.Should().Contain("class_schedule_pdf");
+        payload.Should().Contain("assessment_schedule_pdf");
     }
 
     [Fact]
@@ -121,6 +121,59 @@ public class IntegrationTests : IClassFixture<WebApplicationFactory<Program>>
             "DATA6211", "ISEC6321", "PROG6221", "SAND6221"
         };
         assessmentEvents.Select(x => x.GetProperty("subject_code").GetString()).All(code => code is not null && allowedDis2.Contains(code)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Post_RosebankParser_AssessmentOnly_AllowsMissingClassFileAndGroup()
+    {
+        var assessmentPdf = FindExamplePdf("exams", "DISD0601");
+        var client = _factory.CreateClient();
+
+        using var form = new MultipartFormDataContent
+        {
+            { new StringContent("DIS3"), "student_year" }
+        };
+        form.Add(new StreamContent(File.OpenRead(assessmentPdf)), "assessment_schedule_pdf", Path.GetFileName(assessmentPdf));
+
+        var response = await client.PostAsync("/api/parser/rosebank", form);
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        using var doc = JsonDocument.Parse(body);
+
+        doc.RootElement.GetProperty("student_group").GetString().Should().BeEmpty();
+        doc.RootElement.GetProperty("schedules").GetProperty("class_schedule").GetProperty("events").GetArrayLength().Should().Be(0);
+        doc.RootElement.GetProperty("schedules").GetProperty("assessment_schedule").GetProperty("events").GetArrayLength().Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task Post_RosebankParser_SupplementaryAttempt_ReturnsDeferredAssessmentRowsOnly()
+    {
+        var assessmentPdf = FindExamplePdf("exams", "DISD0601");
+        var client = _factory.CreateClient();
+
+        using var form = new MultipartFormDataContent
+        {
+            { new StringContent("DIS3"), "student_year" },
+            { new StringContent("supplementary"), "assessment_attempt" }
+        };
+        form.Add(new StreamContent(File.OpenRead(assessmentPdf)), "assessment_schedule_pdf", Path.GetFileName(assessmentPdf));
+
+        var response = await client.PostAsync("/api/parser/rosebank", form);
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        using var doc = JsonDocument.Parse(body);
+
+        var assessmentEvents = doc.RootElement
+            .GetProperty("schedules")
+            .GetProperty("assessment_schedule")
+            .GetProperty("events")
+            .EnumerateArray()
+            .ToList();
+
+        assessmentEvents.Should().NotBeEmpty();
+        assessmentEvents.All(x => x.GetProperty("is_deferred").GetBoolean()).Should().BeTrue();
     }
 
     [Fact]

@@ -5,6 +5,7 @@ import { FileUpload } from '../components/FileUpload';
 import { ModeSelector } from '../components/ModeSelector';
 import { ParserDiagnosticsPanel } from '../components/ParserDiagnosticsPanel';
 import { SyncConfirmation } from '../components/SyncConfirmation';
+import { ModuleSelection } from '../components/ModuleSelection';
 import { apiService } from '../services/api';
 import type {
   AcademicSyncPayload,
@@ -42,6 +43,8 @@ function mapClassEvent(event: RosebankClassEvent): PreviewEvent {
 
 function mapAssessmentEvent(event: RosebankAssessmentEvent): PreviewEvent {
   const time = event.due_time ?? '23:59';
+  const deliveryMode = event.submission_type === 'online' ? 'Online Submission' : 'Campus Sitting';
+  const detailParts = [event.assessment_type, deliveryMode];
   return {
     id: event.id,
     mode: 'assessment',
@@ -50,7 +53,9 @@ function mapAssessmentEvent(event: RosebankAssessmentEvent): PreviewEvent {
     date: event.specific_date ?? undefined,
     startTime: time,
     endTime: time,
-    notes: `${event.assessment_type}${event.is_deferred ? ' (Deferred)' : ''}`,
+    deliveryMode,
+    sitting: null,
+    notes: detailParts.join(' · '),
     confidence: event.confidence,
   };
 }
@@ -129,9 +134,9 @@ function buildAssessmentPayload(events: PreviewEvent[], timeZone: string): Asses
         time: event.startTime,
         moduleCode: event.subjectCode,
         moduleName: event.title,
-        assessmentType: event.notes ?? 'Assessment',
-        deliveryMode: 'Unspecified',
-        sitting: null,
+        assessmentType: event.notes?.split(' · ')[0] ?? 'Assessment',
+        deliveryMode: event.deliveryMode ?? 'Unspecified',
+        sitting: event.sitting ?? null,
       })),
   };
 }
@@ -140,6 +145,7 @@ export function App() {
   const [mode, setMode] = useState<TimetableMode>('academic');
   const [classFile, setClassFile] = useState<File | null>(null);
   const [assessmentFile, setAssessmentFile] = useState<File | null>(null);
+  const [assessmentAttempt, setAssessmentAttempt] = useState<'main' | 'supplementary'>('main');
   const [year, setYear] = useState('DIS3');
   const [group, setGroup] = useState('GR1');
   const [timeZone, setTimeZone] = useState('Africa/Johannesburg');
@@ -149,12 +155,28 @@ export function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusText, setStatusText] = useState('Ready.');
+  const [lastDownloadName, setLastDownloadName] = useState<string | null>(null);
   const [rawPreview, setRawPreview] = useState<RosebankParseResponse | null>(null);
+  const [selectedModules, setSelectedModules] = useState<Set<string>>(new Set());
 
   const preview = useMemo(() => {
     if (!rawPreview) return null;
-    return normalizePreview(rawPreview, mode);
-  }, [mode, rawPreview]);
+
+    const clonedResponse: RosebankParseResponse = {
+      ...rawPreview,
+      schedules: {
+        class_schedule: {
+          ...rawPreview.schedules.class_schedule,
+          events: rawPreview.schedules.class_schedule.events.filter((e) => selectedModules.has(e.subject_code)),
+        },
+        assessment_schedule: {
+          ...rawPreview.schedules.assessment_schedule,
+          events: rawPreview.schedules.assessment_schedule.events.filter((e) => selectedModules.has(e.subject_code)),
+        },
+      },
+    };
+    return normalizePreview(clonedResponse, mode);
+  }, [mode, rawPreview, selectedModules]);
 
   const filteredPreview = useMemo(() => {
     if (!preview) return null;
@@ -173,18 +195,37 @@ export function App() {
   }, [filterText, preview]);
 
   async function handleParse() {
-    if (!classFile) {
+    if (mode === 'academic' && !classFile) {
       setError('Select the class schedule PDF before parsing.');
+      return;
+    }
+
+    if (mode === 'assessment' && !assessmentFile) {
+      setError('Select the assessment PDF before parsing.');
       return;
     }
 
     setLoading(true);
     setError(null);
-    setStatusText('Parsing Rosebank timetable...');
+    setStatusText(mode === 'academic' ? 'Parsing academic timetable...' : 'Parsing assessment timetable...');
 
     try {
-      const response = await apiService.previewRosebank(classFile, assessmentFile, year, group);
+      const response = await apiService.previewRosebank(
+        classFile,
+        assessmentFile,
+        year,
+        assessmentAttempt,
+        mode === 'academic' ? group : undefined,
+      );
       setRawPreview(response);
+      setLastDownloadName(null);
+      
+      const defaultModules = new Set<string>();
+      if (response.available_modules && response.available_modules[year]) {
+        Object.keys(response.available_modules[year]).forEach(code => defaultModules.add(code));
+      }
+      setSelectedModules(defaultModules);
+
       setStatusText('Preview ready.');
     } catch (responseError) {
       setError(responseError instanceof Error ? responseError.message : 'Parsing failed.');
@@ -198,12 +239,14 @@ export function App() {
     // Use a temporary object URL so the browser can download the generated .ics file directly.
     const fileUrl = URL.createObjectURL(blob);
     const link = document.createElement('a');
+    const fileName = `${prefix}-${mode}-${new Date().toISOString().slice(0, 10)}.ics`;
     link.href = fileUrl;
-    link.download = `${prefix}-${mode}-${new Date().toISOString().slice(0, 10)}.ics`;
+    link.download = fileName;
     document.body.appendChild(link);
     link.click();
     link.remove();
     URL.revokeObjectURL(fileUrl);
+    setLastDownloadName(fileName);
   }
 
   async function handleExport() {
@@ -262,6 +305,7 @@ export function App() {
             <ModeSelector mode={mode} onChange={setMode} disabled={loading} />
 
             <FileUpload
+              mode={mode}
               classFile={classFile}
               assessmentFile={assessmentFile}
               onClassFileSelect={setClassFile}
@@ -277,28 +321,64 @@ export function App() {
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <div>
                   <label className="mb-2 block text-sm font-semibold text-white/80">Student year</label>
-                  <select className="field" value={year} onChange={(event) => setYear(event.target.value)} disabled={loading}>
+                  <select title="Student year" className="field" value={year} onChange={(event) => setYear(event.target.value)} disabled={loading}>
                     <option value="DIS1">DIS1</option>
                     <option value="DIS2">DIS2</option>
                     <option value="DIS3">DIS3</option>
                   </select>
                 </div>
-                <div>
-                  <label className="mb-2 block text-sm font-semibold text-white/80">Group</label>
-                  <select className="field" value={group} onChange={(event) => setGroup(event.target.value)} disabled={loading}>
-                    <option value="GR1">GR1</option>
-                    <option value="GR2">GR2</option>
-                    <option value="GR3">GR3</option>
-                  </select>
-                </div>
+                {mode === 'academic' ? (
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-white/80">Group</label>
+                    <select title="Student group" className="field" value={group} onChange={(event) => setGroup(event.target.value)} disabled={loading}>
+                      <option value="GR1">GR1</option>
+                      <option value="GR2">GR2</option>
+                      <option value="GR3">GR3</option>
+                    </select>
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <label className="mb-2 block text-sm font-semibold text-white/80">Assessment attempt</label>
+                      <select
+                        title="Assessment attempt"
+                        className="field"
+                        value={assessmentAttempt}
+                        // Supplementary mode asks the parser for deferred-only rows from the assessment schedule.
+                        onChange={(event) => setAssessmentAttempt(event.target.value as 'main' | 'supplementary')}
+                        disabled={loading}
+                      >
+                        <option value="main">Main timetable</option>
+                        <option value="supplementary">Resubmission / supplementary</option>
+                      </select>
+                    </div>
+                    <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 text-sm text-white/65">
+                      Assessment parsing only needs the year plus the assessment PDF.
+                    </div>
+                  </>
+                )}
                 <div className="md:col-span-2 flex items-end">
-                  <button type="button" className="button-primary w-full" onClick={handleParse} disabled={loading || !classFile}>
+                  <button
+                    type="button"
+                    className="button-primary w-full"
+                    onClick={handleParse}
+                    disabled={loading || (mode === 'academic' ? !classFile : !assessmentFile)}
+                  >
                     {loading ? <LoaderCircle className="animate-spin" size={18} /> : null}
                     {loading ? 'Working...' : 'Parse Timetable'}
                   </button>
                 </div>
               </div>
             </div>
+
+            {rawPreview && rawPreview.available_modules ? (
+              <ModuleSelection 
+                availableModules={rawPreview.available_modules}
+                selectedModules={selectedModules}
+                onSelectionChange={setSelectedModules}
+                studentYear={year}
+              />
+            ) : null}
 
             {filteredPreview ? (
               <EventPreview
@@ -327,6 +407,7 @@ export function App() {
 
             <SyncConfirmation
               mode={mode}
+              events={preview?.events || []}
               timeZone={timeZone}
               semesterEndDate={semesterEndDate}
               weeksDuration={weeksDuration}
@@ -335,6 +416,7 @@ export function App() {
               onTimeZoneChange={setTimeZone}
               onSemesterEndDateChange={setSemesterEndDate}
               onWeeksDurationChange={setWeeksDuration}
+              lastDownloadName={lastDownloadName}
               onExport={() => {
                 handleExport().catch((responseError: Error) => setError(responseError.message));
               }}

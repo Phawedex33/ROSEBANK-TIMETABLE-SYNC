@@ -56,6 +56,7 @@ export interface RosebankParseResponse {
     earliest_assessment_date: string | null;
     latest_assessment_date: string | null;
   };
+  available_modules: Record<string, Record<string, string>>;
 }
 
 export interface DiagnosticRow {
@@ -81,6 +82,8 @@ export interface PreviewEvent {
   endTime: string;
   location?: string | null;
   lecturer?: string | null;
+  deliveryMode?: string | null;
+  sitting?: number | null;
   notes?: string | null;
   confidence: ConfidenceLevel;
 }

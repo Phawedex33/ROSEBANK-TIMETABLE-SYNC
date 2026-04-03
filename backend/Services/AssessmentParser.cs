@@ -6,47 +6,53 @@ namespace TimetableSync.Api.Services;
 
 public sealed class AssessmentParser : IAssessmentParser
 {
-    private const string DateToken = "\\d{1,2}(?:[-/ ]+)(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|\\d{1,2})(?:[-/ ]+)\\d{2,4}";
-    private const string TimeToken = "(?:[01]?\\d|2[0-3])[:h][0-5]\\d|23:59";
+    private const string DateToken = @"\d{1,2}(?:[-/ ]+)(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|\d{1,2})(?:[-/ ]+)\d{2,4}";
+    private const string TimeToken = @"(?:[01]?\d|2[0-3])[:h][0-5]\d|23:59";
+    private const string TypeToken = @"(?:Practical\s+Assignment\s*\d*(?:\s+Deferred)?|Practical\s+Test\s*\d*(?:\s+Deferred)?|Theory\s+Test\s*\d*(?:\s+Deferred)?|Final\s+Exam|Assignment\s*\d*(?:\s+Deferred)?|Project\s*\d*(?:\s+Deferred)?|Test\s*\d*(?:\s+Sitting\s*[12])?(?:\s+Deferred)?|Part\s*\d*(?:\s+Deferred)?|Task\s*\d*(?:\s+Deferred)?|Exam|Portfolio\s+of\s+Evidence(?:\s*\d*)?|Quiz\s*\d*|Presentation\s*\d*)";
 
     private static readonly Regex SegmentPattern = new(
-        "(?<prog>DIS\\d)\\s+(?<code>[A-Z]{4}\\d{4})\\s+(?<name>.+?)\\s+(?<type>Practical\\s+Assignment\\s*\\d*(?:\\s+Deferred)?|Practical\\s+Test\\s*\\d*(?:\\s+Deferred)?|Theory\\s+Test\\s*\\d*(?:\\s+Deferred)?|Final\\s+Exam|Assignment\\s*\\d*(?:\\s+Deferred)?|Project\\s*\\d*(?:\\s+Deferred)?|Test\\s*\\d*(?:\\s+Sitting\\s*[12])?|Part\\s*\\d*(?:\\s+Deferred)?|Task\\s*\\d*(?:\\s+Deferred)?|Exam|Quiz\\s*\\d*|Presentation\\s*\\d*)\\s+(?<delivery>Campus\\s+Sitting|Online\\s+Submission(?:\\s+Turnitin)?)\\s+(?<date>" + DateToken + ")\\s+(?<time>" + TimeToken + ")(?=\\s+DIS\\d\\s+[A-Z]{4}\\d{4}\\b|$)",
+        @"(?<prog>DIS\d)\s+(?<code>[A-Z]{4}\d{4})\s+(?<name>.+?)\s+(?<type>" + TypeToken + @")\s+(?<delivery>Campus\s+Sitting|Online\s+Submission(?:\s+Turnitin)?)\s+(?<date>" + DateToken + @")\s+(?<time>" + TimeToken + @")(?=\s+DIS\d\s+[A-Z]{4}\d{4}\b|$)",
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
 
     private static readonly Regex RowPattern = new(
-        "(?<code>[A-Z]{4}\\d{4})\\s+(?<name>.+?)\\s+(?<type>Practical\\s+Assignment\\s*\\d*|Practical\\s+Test\\s*\\d*|Theory\\s+Test\\s*\\d*|Final\\s+Exam|Assignment\\s*\\d*|Test\\s*\\d*|Exam|Project\\s*\\d*|Quiz\\s*\\d*|Presentation\\s*\\d*)\\s*(?<tail>.*?)\\s+(?<date>" + DateToken + ")\\s+(?<time>" + TimeToken + ")",
+        @"(?<code>[A-Z]{4}\d{4})\s+(?<name>.+?)\s+(?<type>" + TypeToken + @")\s*(?<tail>.*?)\s+(?<date>" + DateToken + @")\s+(?<time>" + TimeToken + @")",
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
 
     private static readonly Regex PasLinePattern = new(
-        "^DIS\\d\\s+(?<code>[A-Z]{4}\\d{4})\\s+(?<name>.+?)\\s+(?<type>Practical\\s+Assignment\\s*\\d*|Practical\\s+Test\\s*\\d*|Theory\\s+Test\\s*\\d*|Final\\s+Exam|Assignment\\s*\\d*(?:\\s+Deferred)?|Project\\s*\\d*(?:\\s+Deferred)?|Test\\s*\\d*(?:\\s+Sitting\\s*[12])?|Part\\s*\\d*(?:\\s+Deferred)?|Task\\s*\\d*(?:\\s+Deferred)?|Exam|Quiz\\s*\\d*|Presentation\\s*\\d*)\\s+(?<delivery>Campus\\s+Sitting|Online\\s+Submission(?:\\s+Turnitin)?)\\s+(?<date>" + DateToken + ")\\s+(?<time>" + TimeToken + ")$",
+        @"^DIS\d\s+(?<code>[A-Z]{4}\d{4})\s+(?<name>.+?)\s+(?<type>" + TypeToken + @")\s+(?<delivery>Campus\s+Sitting|Online\s+Submission(?:\s+Turnitin)?)\s+(?<date>" + DateToken + @")\s+(?<time>" + TimeToken + @")$",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private static readonly Regex ModuleCodePattern = new(
-        "\\b(?<code>[A-Z]{4}\\d{4})\\b",
+        @"\b(?<code>[A-Z]{4}\d{4})\b",
         RegexOptions.Compiled);
 
     private static readonly Regex DatePattern = new(
-        "\\b(?<date>" + DateToken + ")\\b",
+        @"\b(?<date>" + DateToken + @")\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private static readonly Regex TimePattern = new(
-        "\\b(?<time>" + TimeToken + ")\\b",
+        @"\b(?<time>" + TimeToken + @")\b",
         RegexOptions.Compiled);
 
     private static readonly Regex AssessmentTypePattern = new(
-        "(?<type>Practical\\s+Assignment\\s*\\d*|Practical\\s+Test\\s*\\d*|Theory\\s+Test\\s*\\d*|Final\\s+Exam|Assignment\\s*\\d*|Test\\s*\\d*|Exam|Project\\s*\\d*|Quiz\\s*\\d*|Presentation\\s*\\d*)",
+        @"(?<type>" + TypeToken + @")",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private static readonly Regex SittingPattern = new(
-        "Sitting\\s*(?<sitting>[12])",
+        @"Sitting\s*(?<sitting>[12])",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private static readonly Regex ProgramCodePattern = new(
-        "\\bDIS\\d\\b",
+        @"\bDIS\d\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    public AssessmentPreviewResponse Parse(string input)
+    private static readonly Regex ReplacementMarkerPattern = new(
+        "Replacement|Resubmission|Resubmition|Supplemental|Supplementary",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    public AssessmentPreviewResponse Parse(string input, AssessmentParseOptions? options = null)
     {
+        options ??= new AssessmentParseOptions();
         var preprocessed = ExpandCompactPasText(input);
         var normalized = Regex.Replace(preprocessed, "\\s+", " ").Trim();
         var response = new AssessmentPreviewResponse
@@ -56,11 +62,9 @@ public sealed class AssessmentParser : IAssessmentParser
         var dedupe = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         ParseSegmentMatches(normalized, response, dedupe);
-        if (response.Events.Count == 0)
-        {
-            ParseRowMatches(preprocessed, normalized, response, dedupe);
-            ParseModuleBlocks(preprocessed, response, dedupe);
-        }
+        ParseRowMatches(preprocessed, normalized, response, dedupe);
+        // Run the block fallback even when regex parsing found something so merged OCR rows can still be recovered.
+        ParseModuleBlocks(preprocessed, response, dedupe);
 
         if (response.Events.Count == 0)
         {
@@ -69,6 +73,7 @@ public sealed class AssessmentParser : IAssessmentParser
         else
         {
             PruneLowerQualityDuplicates(response);
+            ApplyAttemptFilter(response, options);
         }
 
         return response;
@@ -244,6 +249,12 @@ public sealed class AssessmentParser : IAssessmentParser
                 continue;
             }
 
+            if (dateMatches.Count == 1 &&
+                (PasLinePattern.IsMatch(blockNormalized) || RowPattern.IsMatch(blockNormalized)))
+            {
+                continue;
+            }
+
             for (var dateIndex = 0; dateIndex < dateMatches.Count; dateIndex++)
             {
                 var dateRaw = dateMatches[dateIndex].Groups["date"].Value;
@@ -253,9 +264,20 @@ public sealed class AssessmentParser : IAssessmentParser
                     continue;
                 }
 
+                var dateMatch = dateMatches[dateIndex];
+                var localContext = GetDateContext(blockNormalized, dateMatch);
+                var previousDateEnd = dateIndex == 0
+                    ? -1
+                    : dateMatches[dateIndex - 1].Index + dateMatches[dateIndex - 1].Length;
+                var localAssessmentType = ResolveAssessmentType(blockNormalized, dateMatch.Index, previousDateEnd, assessmentType);
                 var time = ResolveTimeForIndex(timeMatches, dateIndex, deliveryMode);
                 int? sitting = null;
-                if (sittingMatches.Count > 0)
+                var localSittingMatch = ResolveLatestSitting(blockNormalized, dateMatch.Index);
+                if (localSittingMatch.HasValue)
+                {
+                    sitting = localSittingMatch.Value;
+                }
+                else if (sittingMatches.Count > 0)
                 {
                     var sittingIdx = Math.Min(dateIndex, sittingMatches.Count - 1);
                     sitting = int.Parse(sittingMatches[sittingIdx].Groups["sitting"].Value, CultureInfo.InvariantCulture);
@@ -265,14 +287,66 @@ public sealed class AssessmentParser : IAssessmentParser
                 {
                     ModuleCode = code,
                     ModuleName = name,
-                    AssessmentType = assessmentType,
+                    AssessmentType = localAssessmentType,
                     Sitting = sitting,
                     Date = date,
                     Time = time,
-                    DeliveryMode = deliveryMode
+                    DeliveryMode = DetectDeliveryMode(localContext)
                 }, $"branch=pas_module_block module={code} dateIndex={dateIndex + 1}");
             }
         }
+    }
+
+    private static string GetDateContext(string blockNormalized, Match dateMatch)
+    {
+        var start = Math.Max(0, dateMatch.Index - 90);
+        var end = Math.Min(blockNormalized.Length, dateMatch.Index + dateMatch.Length + 40);
+        var length = Math.Max(0, end - start);
+        return length == 0 ? blockNormalized : blockNormalized.Substring(start, length);
+    }
+
+    private static string ResolveAssessmentType(string blockNormalized, int dateIndex, int previousDateEnd, string fallbackType)
+    {
+        var localTypeMatch = AssessmentTypePattern.Matches(blockNormalized)
+            .Cast<Match>()
+            .Where(match => match.Index < dateIndex)
+            .LastOrDefault();
+        if (localTypeMatch is null || !localTypeMatch.Success)
+        {
+            return MaybeMarkDeferred(fallbackType, blockNormalized, dateIndex, previousDateEnd);
+        }
+
+        var localType = NormalizeText(localTypeMatch.Groups["type"].Value);
+        return MaybeMarkDeferred(localType, blockNormalized, dateIndex, previousDateEnd);
+    }
+
+    private static int? ResolveLatestSitting(string blockNormalized, int dateIndex)
+    {
+        var localSittingMatch = SittingPattern.Matches(blockNormalized)
+            .Cast<Match>()
+            .Where(match => match.Index < dateIndex)
+            .LastOrDefault();
+        return localSittingMatch is not null && localSittingMatch.Success
+            ? int.Parse(localSittingMatch.Groups["sitting"].Value, CultureInfo.InvariantCulture)
+            : null;
+    }
+
+    private static string MaybeMarkDeferred(string assessmentType, string blockNormalized, int dateIndex, int previousDateEnd)
+    {
+        var start = previousDateEnd >= 0
+            ? Math.Min(previousDateEnd, blockNormalized.Length)
+            : Math.Max(0, dateIndex - 80);
+        var end = Math.Min(blockNormalized.Length, dateIndex + 16);
+        var length = Math.Max(0, end - start);
+        var context = blockNormalized.Substring(start, length);
+
+        if (!assessmentType.Contains("Deferred", StringComparison.OrdinalIgnoreCase) &&
+            ReplacementMarkerPattern.IsMatch(context))
+        {
+            return $"{assessmentType} Deferred";
+        }
+
+        return assessmentType;
     }
 
     private static string ExtractModuleName(string blockNormalized, string code, Match typeMatch)
@@ -309,11 +383,6 @@ public sealed class AssessmentParser : IAssessmentParser
 
     private static string DetectDeliveryMode(string value)
     {
-        if (value.Contains("assignment", StringComparison.OrdinalIgnoreCase))
-        {
-            return "Online Submission";
-        }
-
         if (value.Contains("online", StringComparison.OrdinalIgnoreCase) ||
             value.Contains("submission", StringComparison.OrdinalIgnoreCase))
         {
@@ -323,6 +392,11 @@ public sealed class AssessmentParser : IAssessmentParser
         if (value.Contains("campus", StringComparison.OrdinalIgnoreCase))
         {
             return "Campus Sitting";
+        }
+
+        if (value.Contains("assignment", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Online Submission";
         }
 
         return "Unspecified";
@@ -351,6 +425,8 @@ public sealed class AssessmentParser : IAssessmentParser
         AssessmentEvent ev,
         string diagnostic)
     {
+        ev = SanitizeEvent(ev);
+
         if (TryGetSuspiciousEventReason(ev, out var suspiciousReason))
         {
             response.Warnings.Add($"Skipped suspicious assessment row for {ev.ModuleCode}: {suspiciousReason}");
@@ -431,6 +507,91 @@ public sealed class AssessmentParser : IAssessmentParser
 
         reason = string.Empty;
         return false;
+    }
+
+    private static AssessmentEvent SanitizeEvent(AssessmentEvent ev)
+    {
+        var moduleName = NormalizeModuleName(ev.ModuleName, ev.ModuleCode);
+        return new AssessmentEvent
+        {
+            ModuleCode = ev.ModuleCode,
+            ModuleName = moduleName
+            ,
+            AssessmentType = ev.AssessmentType,
+            Sitting = ev.Sitting,
+            Date = ev.Date,
+            Time = ev.Time,
+            DeliveryMode = ev.DeliveryMode
+        };
+    }
+
+    private static string NormalizeModuleName(string moduleName, string moduleCode)
+    {
+        var normalized = NormalizeText(moduleName);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return normalized;
+        }
+
+        // OCR sometimes glues the next module block onto the current name, so trim at the first obvious boundary.
+        normalized = Regex.Replace(normalized, "\\bDIS\\d\\b", string.Empty, RegexOptions.IgnoreCase).Trim();
+
+        var extraModuleMatch = ModuleCodePattern.Matches(normalized)
+            .Cast<Match>()
+            .FirstOrDefault(match => !string.Equals(match.Groups["code"].Value, moduleCode, StringComparison.OrdinalIgnoreCase));
+        if (extraModuleMatch is not null)
+        {
+            normalized = normalized[..extraModuleMatch.Index].Trim();
+        }
+
+        var cutoffPatterns = new[]
+        {
+            "\\b(?:Campus\\s+Sitting|Online\\s+Submission(?:\\s+Turnitin)?)\\b",
+            "\\bReplacement\\b",
+            "\\bResubmission\\b",
+            "\\bResubmition\\b",
+            "\\bSupplemental\\b",
+            "\\bSupplementary\\b",
+            "\\b" + DateToken + "\\b",
+            "\\b" + TimeToken + "\\b"
+        };
+
+        foreach (var pattern in cutoffPatterns)
+        {
+            var cutoffMatch = Regex.Match(normalized, pattern, RegexOptions.IgnoreCase);
+            if (cutoffMatch.Success && cutoffMatch.Index > 0)
+            {
+                normalized = normalized[..cutoffMatch.Index].Trim();
+            }
+        }
+
+        return NormalizeText(normalized);
+    }
+
+    private static void ApplyAttemptFilter(AssessmentPreviewResponse response, AssessmentParseOptions options)
+    {
+        if (!options.Attempt.Equals("main", StringComparison.OrdinalIgnoreCase) &&
+            !options.Attempt.Equals("supplementary", StringComparison.OrdinalIgnoreCase))
+        {
+            response.Diagnostics.Add($"branch=attempt_filter mode={options.Attempt} count={response.Events.Count}");
+            return;
+        }
+
+        var supplementaryOnly = options.Attempt.Equals("supplementary", StringComparison.OrdinalIgnoreCase);
+        // Keep the UI choice simple: main attempt shows normal dates, supplementary shows only deferred dates.
+        response.Events = response.Events
+            .Where(ev => supplementaryOnly
+                ? ev.AssessmentType.Contains("Deferred", StringComparison.OrdinalIgnoreCase)
+                : !ev.AssessmentType.Contains("Deferred", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        response.Diagnostics.Add($"branch=attempt_filter mode={options.Attempt} count={response.Events.Count}");
+        if (response.Events.Count == 0)
+        {
+            response.Warnings.Add(supplementaryOnly
+                ? "No supplementary or resubmission dates were found for the selected timetable."
+                : "No main sitting assessment dates were found for the selected timetable.");
+        }
     }
 
     private static void PruneLowerQualityDuplicates(AssessmentPreviewResponse response)

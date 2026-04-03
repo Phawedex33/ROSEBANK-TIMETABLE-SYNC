@@ -17,6 +17,15 @@ public sealed class RosebankParseRequest
 
     [FromForm(Name = "assessment_schedule_pdf")]
     public IFormFile? AssessmentSchedulePdf { get; set; }
+
+    [FromForm(Name = "assessment_attempt")]
+    public string? AssessmentAttempt { get; set; }
+
+    [FromForm(Name = "additional_years")]
+    public string? AdditionalYears { get; set; }
+    
+    [FromForm(Name = "additional_modules")]
+    public string? AdditionalModules { get; set; }
 }
 
 public sealed class RosebankMissingInputsError
@@ -62,6 +71,9 @@ public sealed class RosebankParseResponse
 
     [JsonPropertyName("summary")]
     public RosebankSummary Summary { get; init; } = new();
+
+    [JsonPropertyName("available_modules")]
+    public Dictionary<string, Dictionary<string, string>> AvailableModules { get; init; } = new();
 }
 
 public sealed class RosebankSchedules
@@ -130,10 +142,10 @@ public sealed class RosebankClassEvent
     public List<string> Reminders { get; init; } = new() { "15min_before" };
 
     [JsonPropertyName("confidence")]
-    public string Confidence { get; init; } = "high";
+    public string Confidence { get; set; } = "high";
 
     [JsonPropertyName("notes")]
-    public string? Notes { get; init; }
+    public string? Notes { get; set; }
 }
 
 public sealed class RosebankAssessmentEvent
@@ -175,10 +187,10 @@ public sealed class RosebankAssessmentEvent
     public List<string> Reminders { get; init; } = new();
 
     [JsonPropertyName("confidence")]
-    public string Confidence { get; init; } = "high";
+    public string Confidence { get; set; } = "high";
 
     [JsonPropertyName("notes")]
-    public string? Notes { get; init; }
+    public string? Notes { get; set; }
 }
 
 public sealed class RosebankWarning

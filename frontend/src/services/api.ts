@@ -16,15 +16,21 @@ async function readResponse<T>(response: Response): Promise<T> {
 
 export const apiService = {
   async previewRosebank(
-    classFile: File,
+    classFile: File | null,
     assessmentFile: File | null,
     year: string,
-    group: string,
+    assessmentAttempt: 'main' | 'supplementary',
+    group?: string,
   ): Promise<RosebankParseResponse> {
     const formData = new FormData();
     formData.append('student_year', year);
-    formData.append('student_group', group);
-    formData.append('class_schedule_pdf', classFile);
+    formData.append('assessment_attempt', assessmentAttempt);
+    if (group) {
+      formData.append('student_group', group);
+    }
+    if (classFile) {
+      formData.append('class_schedule_pdf', classFile);
+    }
     if (assessmentFile) {
       formData.append('assessment_schedule_pdf', assessmentFile);
     }
