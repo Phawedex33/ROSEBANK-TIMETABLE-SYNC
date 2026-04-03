@@ -1,0 +1,11 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+C:\Users\CASH\Desktop\ROSEBANK-TIMETABLE-SYNC\rosebank-timetable-sync\backend\Services\RosebankParserService.cs(134,36): error CS0266: Cannot implicitly convert type 'System.Collections.Generic.IReadOnlyDictionary<string, string>' to 'System.Collections.Generic.Dictionary<string, string>'. An explicit conversion exists (are you missing a cast?) [C:\Users\CASH\Desktop\ROSEBANK-TIMETABLE-SYNC\rosebank-timetable-sync\backend\TimetableSync.Api.csproj]
+
+Build FAILED.
+
+C:\Users\CASH\Desktop\ROSEBANK-TIMETABLE-SYNC\rosebank-timetable-sync\backend\Services\RosebankParserService.cs(134,36): error CS0266: Cannot implicitly convert type 'System.Collections.Generic.IReadOnlyDictionary<string, string>' to 'System.Collections.Generic.Dictionary<string, string>'. An explicit conversion exists (are you missing a cast?) [C:\Users\CASH\Desktop\ROSEBANK-TIMETABLE-SYNC\rosebank-timetable-sync\backend\TimetableSync.Api.csproj]
+    0 Warning(s)
+    1 Error(s)
+
+Time Elapsed 00:00:04.93

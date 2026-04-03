@@ -128,26 +128,32 @@ public sealed class RosebankParserService : IRosebankParserService
                 .GroupBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.First().Value, StringComparer.OrdinalIgnoreCase);
 
+            IReadOnlyDictionary<string, string> targetSubjectMap = allSubjectsMap;
+            if (!string.IsNullOrWhiteSpace(studentYear) && SubjectNameMap.TryGetValue(studentYear.ToUpperInvariant(), out var specificYearMap))
+            {
+                targetSubjectMap = specificYearMap;
+            }
+
             var tempEvents = new List<RosebankAssessmentEvent>();
             for (int i = 0; i < assessmentParse.Events.Count; i++)
             {
                 var ev = assessmentParse.Events[i];
-                // Use all subjects for remapping so we don't lose repeated modules
-                ev = RemapAssessmentEventForYear(ev, allSubjectsMap);
+                // Use targetSubjectMap for remapping so we drop repeated modules from other years
+                ev = RemapAssessmentEventForYear(ev, targetSubjectMap);
                 
-                if (allSubjectsMap.Count > 0 && !allSubjectsMap.ContainsKey(ev.ModuleCode))
+                if (targetSubjectMap.Count > 0 && !targetSubjectMap.ContainsKey(ev.ModuleCode))
                 {
-                    // If it is completely unrecognized, skip it (but log a warning)
+                    // If it is completely unrecognized for this year, skip it (but log a warning)
                     warnings.Add(new RosebankWarning
                     {
                         EventId = null,
-                        Issue = $"Skipped assessment '{ev.ModuleCode}' because it is not a recognized subject.",
+                        Issue = $"Skipped assessment '{ev.ModuleCode}' because it is not a recognized subject for this student's year.",
                         Severity = "info"
                     });
                     continue;
                 }
 
-                var subjectName = allSubjectsMap.TryGetValue(ev.ModuleCode, out var mapped) ? mapped : ev.ModuleName;
+                var subjectName = targetSubjectMap.TryGetValue(ev.ModuleCode, out var mapped) ? mapped : ev.ModuleName;
 
                 var isOnline = ev.DeliveryMode.Contains("Online", StringComparison.OrdinalIgnoreCase);
                 var submissionType = isOnline ? "online" : "campus_sitting";

@@ -1,0 +1,39 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  TimetableSync.Api -> C:\Users\CASH\Desktop\ROSEBANK-TIMETABLE-SYNC\rosebank-timetable-sync\backend\bin\Debug\net8.0\TimetableSync.Api.dll
+  TimetableSync.Api.Tests -> C:\Users\CASH\Desktop\ROSEBANK-TIMETABLE-SYNC\rosebank-timetable-sync\tests\TimetableSync.Api.Tests\bin\Debug\net8.0\TimetableSync.Api.Tests.dll
+Test run for C:\Users\CASH\Desktop\ROSEBANK-TIMETABLE-SYNC\rosebank-timetable-sync\tests\TimetableSync.Api.Tests\bin\Debug\net8.0\TimetableSync.Api.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 18.0.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:04.06]     TimetableSync.Api.Tests.IntegrationTests.Post_RosebankParser_DifferentYear_FiltersAssessmentRows [FAIL]
+  Failed TimetableSync.Api.Tests.IntegrationTests.Post_RosebankParser_DifferentYear_FiltersAssessmentRows [3 s]
+  Error Message:
+   Expected assessmentEvents.Select(x => x.GetProperty("subject_code").GetString()).All(code => code is not null && allowedDis2.Contains(code)) to be true, but found False.
+  Stack Trace:
+     at FluentAssertions.Execution.XUnit2TestFramework.Throw(String message)
+   at FluentAssertions.Execution.TestFrameworkProvider.Throw(String message)
+   at FluentAssertions.Execution.DefaultAssertionStrategy.HandleFailure(String message)
+   at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
+   at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
+   at FluentAssertions.Execution.AssertionScope.FailWith(String message, Object[] args)
+   at FluentAssertions.Primitives.BooleanAssertions`1.BeTrue(String because, Object[] becauseArgs)
+   at TimetableSync.Api.Tests.IntegrationTests.Post_RosebankParser_DifferentYear_FiltersAssessmentRows() in C:\Users\CASH\Desktop\ROSEBANK-TIMETABLE-SYNC\rosebank-timetable-sync\tests\TimetableSync.Api.Tests\IntegrationTests.cs:line 123
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:09.29]     TimetableSync.Api.Tests.IntegrationTests.Post_RosebankParser_GoldenFiles_ReturnsClassAndAssessmentData [FAIL]
+  Failed TimetableSync.Api.Tests.IntegrationTests.Post_RosebankParser_GoldenFiles_ReturnsClassAndAssessmentData [2 s]
+  Error Message:
+   Expected assessmentEvents.Select(x => x.GetProperty("subject_code").GetString()).All(code => code is not null && allowedDis3.Contains(code)) to be true, but found False.
+  Stack Trace:
+     at FluentAssertions.Execution.XUnit2TestFramework.Throw(String message)
+   at FluentAssertions.Execution.TestFrameworkProvider.Throw(String message)
+   at FluentAssertions.Execution.DefaultAssertionStrategy.HandleFailure(String message)
+   at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
+   at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
+   at FluentAssertions.Execution.AssertionScope.FailWith(String message, Object[] args)
+   at FluentAssertions.Primitives.BooleanAssertions`1.BeTrue(String because, Object[] becauseArgs)
+   at TimetableSync.Api.Tests.IntegrationTests.Post_RosebankParser_GoldenFiles_ReturnsClassAndAssessmentData() in C:\Users\CASH\Desktop\ROSEBANK-TIMETABLE-SYNC\rosebank-timetable-sync\tests\TimetableSync.Api.Tests\IntegrationTests.cs:line 88
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     2, Passed:    26, Skipped:     0, Total:    28, Duration: 9 s - TimetableSync.Api.Tests.dll (net8.0)
